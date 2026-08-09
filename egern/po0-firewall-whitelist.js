@@ -62,20 +62,39 @@ function readHistory(ctx, key) {
   });
 }
 
-async function apiCall(ctx, token, slot) {
-  let url = API_BASE + encodeURIComponent(token) + "/add";
-  if (slot !== null && slot !== undefined && slot !== "") {
-    url += "?slot=" + encodeURIComponent(slot);
+function sleep(ms) {
+  return new Promise(function (resolve) {
+    setTimeout(resolve, ms);
+  });
+}
+
+// po0 API 偶发瞬时异常：返回裸 400（body 仅 "Error"）/ 5xx，几秒后同一
+// token 即成功。请求幂等，重试安全。规范 JSON 错误（如 token 无效）不重试。
+const HTTP_RETRY = 3;
+const HTTP_RETRY_DELAY_MS = 1500;
+
+function isRetryableServerError(status, text) {
+  if (!status) return false;
+  if (status >= 500) return true;
+  if (status >= 200 && status < 300) return false;
+  if (status === 403) return false; // 槽位冲突，重试无意义
+  try {
+    JSON.parse(text);
+    return false; // 规范 JSON 错误 = 确定性失败
+  } catch (e) {
+    return true; // 非 JSON body（如裸 "Error"）= 服务端瞬时异常
   }
-  // ⚠️ Egern 的 ctx.http 在非 2xx 响应时会直接 throw（如
-  // "HTTP error! status: 403, body: ..."），不会把 resp 交回来。
-  // 必须从 error message 里把 status/body 解析出来，走统一处理，
-  // 否则下面 403 槽位冲突分支永远走不到，只会弹裸的 HTTP error。
-  let resp;
+}
+
+// ⚠️ Egern 的 ctx.http 在非 2xx 响应时会直接 throw（如
+// "HTTP error! status: 403, body: ..."），不会把 resp 交回来。
+// 必须从 error message 里把 status/body 解析出来，走统一处理，
+// 否则 403 槽位冲突分支永远走不到，只会弹裸的 HTTP error。
+async function httpPostOnce(ctx, url) {
   let text = "";
   let status = 0;
   try {
-    resp = await ctx.http.post(url, {
+    const resp = await ctx.http.post(url, {
       headers: { "Content-Type": "application/json" },
       body: "",
       timeout: 15000,
@@ -92,9 +111,26 @@ async function apiCall(ctx, token, slot) {
       text = m[2] !== undefined ? m[2] : "";
     } else {
       // 真网络层失败（超时/握手失败/被拦截），没有 HTTP status
-      return { error: msg || "网络请求失败（超时 / 握手失败 / 被拦截）" };
+      return { netError: msg || "网络请求失败（超时 / 握手失败 / 被拦截）" };
     }
   }
+  return { status: status, text: text };
+}
+
+async function apiCall(ctx, token, slot) {
+  let url = API_BASE + encodeURIComponent(token) + "/add";
+  if (slot !== null && slot !== undefined && slot !== "") {
+    url += "?slot=" + encodeURIComponent(slot);
+  }
+  let r = null;
+  for (let attempt = 1; attempt <= HTTP_RETRY; attempt++) {
+    r = await httpPostOnce(ctx, url);
+    if (!r.netError && !isRetryableServerError(r.status, r.text)) break;
+    if (attempt < HTTP_RETRY) await sleep(HTTP_RETRY_DELAY_MS * attempt);
+  }
+  if (r.netError) return { error: r.netError + "（已重试 " + HTTP_RETRY + " 次）" };
+  const status = r.status;
+  const text = r.text;
   let data = null;
   try {
     data = JSON.parse(text);

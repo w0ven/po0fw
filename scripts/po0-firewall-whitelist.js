@@ -139,12 +139,27 @@ function delay(ms) {
 var HTTP_RETRY = 3;
 var HTTP_RETRY_DELAY_MS = 1500;
 
+// 服务端瞬时异常也值得重试：po0 API 偶发返回裸 400（body 仅 "Error"）/ 5xx，
+// 几秒后同一 token 即成功。规范 JSON 错误（如 token 无效 {"code":400,...}）不重试。
+function isRetryableServerError(r) {
+  if (!r || !r.status) return false;
+  if (r.status >= 500) return true;
+  if (r.status >= 200 && r.status < 300) return false;
+  if (r.status === 403) return false; // 槽位冲突，重试无意义
+  try {
+    JSON.parse(r.body);
+    return false; // 规范 JSON 错误 = 确定性失败，不重试
+  } catch (e) {
+    return true; // 非 JSON body（如裸 "Error"）= 服务端瞬时异常
+  }
+}
+
 function httpRequest(method, opts, attempt) {
   attempt = attempt || 1;
   return httpRequestOnce(method, opts).then(function (r) {
-    if (!r.error) return r;
+    if (!r.error && !isRetryableServerError(r)) return r;
     if (attempt >= HTTP_RETRY) {
-      r.error = r.error + "（已重试 " + HTTP_RETRY + " 次）";
+      if (r.error) r.error = r.error + "（已重试 " + HTTP_RETRY + " 次）";
       return r;
     }
     return delay(HTTP_RETRY_DELAY_MS * attempt).then(function () {
