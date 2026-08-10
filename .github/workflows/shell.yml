@@ -1,0 +1,34 @@
+name: Linux and macOS shell
+
+on:
+  push:
+    paths:
+      - "po0fw.sh"
+      - "install-linux.sh"
+      - "tests/test-po0fw.sh"
+      - ".github/workflows/shell.yml"
+  pull_request:
+    paths:
+      - "po0fw.sh"
+      - "install-linux.sh"
+      - "tests/test-po0fw.sh"
+      - ".github/workflows/shell.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  shell:
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run through the platform /bin/sh
+        run: |
+          /bin/sh --version 2>/dev/null || true
+          /bin/sh tests/test-po0fw.sh

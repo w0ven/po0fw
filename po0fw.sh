@@ -82,7 +82,7 @@ for entry in $TOKENS; do
     res=$(curl $CURL_OPTS "$API_BASE/$tok" 2>&1)
 
     if ! echo "$res" | grep -q '"whitelist"'; then
-      log "#$IDX $short… ❌ 查询失败: $res"
+      log "#$IDX ${short}… ❌ 查询失败: $res"
       FAIL=1
       IFS=','; continue
     fi
@@ -90,7 +90,7 @@ for entry in $TOKENS; do
     cur=$(json_current_ip "$res")
     limit=$(echo "$res" | sed -n 's/.*"limit":\([0-9]*\).*/\1/p')
     [ -z "$limit" ] && limit=5
-    log "#$IDX $short… 当前出口 ${cur:-未知}"
+    log "#$IDX ${short}… 当前出口 ${cur:-未知}"
     n=0
     hit=0
     entries=$(json_whitelist_entries "$res")
@@ -108,7 +108,7 @@ for entry in $TOKENS; do
       fi
       case "$slotv" in
         null|"") log "    $mark $ip  (普通，参与 FIFO 淘汰)" ;;
-        *)       log "    $mark $ip  (固定槽位 $slotv，不淘汰)" ;;
+        *)       log "    $mark $ip  (固定槽位 ${slotv}，不淘汰)" ;;
       esac
       n=$((n+1))
       IFS='
@@ -118,9 +118,9 @@ for entry in $TOKENS; do
     [ "$n" -eq 0 ] && log "    (白名单为空)"
     log "    共 $n/$limit 个网段占用"
     if [ "$hit" = "1" ]; then
-      log "#$IDX $short… ✅ 当前出口已在白名单"
+      log "#$IDX ${short}… ✅ 当前出口已在白名单"
     else
-      log "#$IDX $short… ⚠️  当前出口不在白名单（status 不会自动加白，需要时请跑 po0fw）"
+      log "#$IDX ${short}… ⚠️  当前出口不在白名单（status 不会自动加白，需要时请跑 po0fw）"
       FAIL=1
     fi
     IFS=','; continue
@@ -131,7 +131,7 @@ for entry in $TOKENS; do
   res=$(curl $CURL_OPTS -X POST "$url" 2>&1)
 
   if ! echo "$res" | grep -q '"whitelist"'; then
-    log "#$IDX $short… ❌ 请求失败: $res"
+    log "#$IDX ${short}… ❌ 请求失败: $res"
     FAIL=1
     IFS=','; continue
   fi
@@ -140,9 +140,9 @@ for entry in $TOKENS; do
   cur_json=$(echo "$cur" | sed 's|/|\\/|')
   # 验证：响应的 whitelist 数组必须包含 currentIp 对应网段
   if [ -n "$cur" ] && echo "$res" | grep -qF "\"ip\":\"$cur_json\""; then
-    log "#$IDX $short… ✅ 出口 $cur 已在白名单${slot:+ (槽位 $slot)}"
+    log "#$IDX ${short}… ✅ 出口 $cur 已在白名单${slot:+ (槽位 $slot)}"
   else
-    log "#$IDX $short… ❌ 加白未生效 (currentIp=$cur): $res"
+    log "#$IDX ${short}… ❌ 加白未生效 (currentIp=$cur): $res"
     FAIL=1
   fi
   IFS=','
