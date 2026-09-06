@@ -49,7 +49,7 @@ Surge / Loon / Stash / Quantumult X / Shadowrocket / Egern 六客户端脚本模
 ### Linux / macOS / 安卓 Termux
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/install-linux.sh | PO0FW_TOKENS="pgnfw_你的token" sh
+curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/install-linux.sh | PO0FW_TOKENS="pgnfw_你的token" sh
 ```
 
 - Linux(root)：装为 systemd timer（`po0fw.timer`，每 10 分钟）
@@ -59,7 +59,7 @@ curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/install-linux
 ### OpenWrt / Kwrt 软路由
 
 ```sh
-curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
+curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
 PO0FW_TOKENS="pgnfw_你的token" sh /tmp/i.sh
 ```
 
@@ -70,7 +70,7 @@ PO0FW_TOKENS="pgnfw_你的token" sh /tmp/i.sh
 管理员 PowerShell：
 
 ```powershell
-irm https://raw.githubusercontent.com/kelenetwork/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
+irm https://raw.githubusercontent.com/w0ven/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
 powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "pgnfw_你的token"
 ```
 

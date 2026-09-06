@@ -1,11 +1,11 @@
 #!name=po0fw 调试模块
 #!desc=验证 Shadowrocket 是否真的会执行 cron / network-changed 脚本。每 2 分钟 cron 一次 + 切网事件触发，每次运行必弹通知（含 $argument 原文与出网测试结果）。定位完请删除。
 #!author=reallinzc
-#!homepage=https://github.com/kelenetwork/po0fw
+#!homepage=https://github.com/w0ven/po0fw
 
 [Rule]
 IP-CIDR,124.221.69.228/32,DIRECT,no-resolve
 
 [Script]
-po0-debug-cron = type=cron,cronexpr="*/2 * * * *",script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-debug.js,timeout=30,argument=tokens=debug_arg_test
-po0-debug-event = type=event,event-name=network-changed,script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-debug.js,timeout=30,argument=tokens=debug_arg_test
+po0-debug-cron = type=cron,cronexpr="*/2 * * * *",script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-debug.js,timeout=30,argument=tokens=debug_arg_test
+po0-debug-event = type=event,event-name=network-changed,script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-debug.js,timeout=30,argument=tokens=debug_arg_test

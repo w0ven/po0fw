@@ -45,7 +45,7 @@ POST https://124.221.69.228/api/firewall/pgnfw_你的token/add
 
 ```sh
 pkg install -y curl
-curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/install-linux.sh | PO0FW_TOKENS="pgnfw_你的token" sh
+curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/install-linux.sh | PO0FW_TOKENS="pgnfw_你的token" sh
 sv-enable crond
 ```
 

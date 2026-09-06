@@ -1,11 +1,11 @@
 #!name=po0 防火墙自动加白
 #!desc=安装后：配置 → 模块 → 长按本模块 → 编辑纯文本，把下方两行 argument=tokens= 后面的占位替换成你的 pgnfw_ token（多台机器用 | 分割）。Shadowrocket 不支持 Surge 的参数模板，必须直接改原文。
 #!author=reallinzc
-#!homepage=https://github.com/kelenetwork/po0fw
+#!homepage=https://github.com/w0ven/po0fw
 
 [Rule]
 IP-CIDR,124.221.69.228/32,DIRECT,no-resolve
 
 [Script]
-po0-fw-cron = type=cron,cronexpr="*/10 * * * *",script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-firewall-whitelist.js?v=2,timeout=60,argument=tokens=在此填入pgnfw_token
-po0-fw-event = type=event,event-name=network-changed,script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-firewall-whitelist.js?v=2,timeout=60,argument=tokens=在此填入pgnfw_token
+po0-fw-cron = type=cron,cronexpr="*/10 * * * *",script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-firewall-whitelist.js?v=2,timeout=60,argument=tokens=在此填入pgnfw_token
+po0-fw-event = type=event,event-name=network-changed,script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-firewall-whitelist.js?v=2,timeout=60,argument=tokens=在此填入pgnfw_token

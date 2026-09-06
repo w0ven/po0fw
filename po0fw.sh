@@ -1,6 +1,6 @@
 #!/bin/sh
 # po0fw - po0 防火墙自动加白（PC / 软路由 / Termux 通用版）
-# https://github.com/kelenetwork/po0fw
+# https://github.com/w0ven/po0fw
 #
 # 用法:
 #   PO0FW_TOKENS="pgnfw_xxx" ./po0fw.sh          # 环境变量方式

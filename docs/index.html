@@ -171,7 +171,7 @@ footer a{color:var(--ink2)}
       <a href="#preview">效果</a>
       <a href="#faq">FAQ</a>
     </div>
-    <a class="gh" href="https://github.com/kelenetwork/po0fw">GitHub ↗</a>
+    <a class="gh" href="https://github.com/w0ven/po0fw">GitHub ↗</a>
   </div>
 </nav>
 
@@ -245,7 +245,7 @@ footer a{color:var(--ink2)}
     <!-- 软路由 -->
     <div class="pane on" id="pane-router">
       <div class="stepline"><span class="no">1</span><h3>SSH 登录路由器，执行安装命令</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
+      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
 PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh /tmp/i.sh</pre></div>
       <div class="stepline"><span class="no">2</span><h3>完成 —— 已自动配置双触发</h3></div>
       <div class="stepbody">cron 每 10 分钟兜底 + WAN 拨号/重连事件<b>秒级</b>加白。跑一次 <code>po0fw</code> 验证，日志在 <code>/tmp/po0fw.log</code>。</div>
@@ -255,10 +255,10 @@ PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh /tmp/i.sh</pr
     <!-- PC -->
     <div class="pane" id="pane-pc">
       <div class="stepline"><span class="no">1</span><h3>Linux / macOS —— 一条命令</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/kelenetwork/po0fw/main/install-linux.sh | PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh</pre></div>
+      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/install-linux.sh | PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh</pre></div>
       <div class="stepbody">root 自动注册 systemd timer；macOS / 非 root 写入 crontab，均为每 10 分钟。</div>
       <div class="stepline"><span class="no">2</span><h3>Windows —— 管理员 PowerShell</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>irm https://raw.githubusercontent.com/kelenetwork/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
+      <div class="cb"><button class="cp">复制</button><pre>irm https://raw.githubusercontent.com/w0ven/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
 powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>pgnfw_你的token</span>"</pre></div>
       <div class="stepbody">注册计划任务：每 10 分钟 + 网络连接事件双触发。</div>
       <div class="note"><b>常用命令：</b><code>po0fw</code> 立即加白 · <code>po0fw status</code> 查看白名单 · 改 token 编辑 <code>/etc/po0fw.conf</code>（Windows 为 <code>%ProgramData%\po0fw\po0fw.conf</code>）。</div>
@@ -362,13 +362,13 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
 
 <footer>
   <div class="wrap">
-    MIT License · <a href="https://github.com/kelenetwork/po0fw">kelenetwork/po0fw</a> · iOS 模块借鉴学习自 <a href="https://github.com/reallinzc/po0fw">reallinzc/po0fw</a>，感谢原作者 · 图文教程见 <a href="https://wiki.uuuz.de/guide/tutorials/po0fw-whitelist">wiki.uuuz.de</a>
+    MIT License · <a href="https://github.com/w0ven/po0fw">w0ven/po0fw</a> · iOS 模块借鉴学习自 <a href="https://github.com/reallinzc/po0fw">reallinzc/po0fw</a>，感谢原作者 · 图文教程见 <a href="https://wiki.uuuz.de/guide/tutorials/po0fw-whitelist">wiki.uuuz.de</a>
   </div>
 </footer>
 
 <script>
 (function(){
-  var RAW="https://raw.githubusercontent.com/kelenetwork/po0fw/main/";
+  var RAW="https://raw.githubusercontent.com/w0ven/po0fw/main/";
   var inp=document.getElementById('tok'),st=document.getElementById('tokState');
   var PH="pgnfw_你的token";
   function tok(){var v=inp.value.trim();return /^pgnfw_[A-Za-z0-9]+(@\d)?$/.test(v)?v:null}

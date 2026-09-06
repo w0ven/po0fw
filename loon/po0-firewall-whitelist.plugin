@@ -1,7 +1,7 @@
 #!name=po0 防火墙自动加白
 #!desc=调用 po0 防火墙 API 将本机当前出口 IP 加入白名单。支持多 token（英文逗号分割），network-changed 事件与每 10 分钟 cron 自动触发。
 #!author=reallinzc
-#!homepage=https://github.com/kelenetwork/po0fw
+#!homepage=https://github.com/w0ven/po0fw
 #!icon=https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Panel.png
 
 [Argument]
@@ -11,5 +11,5 @@ tokens = input,"",tag=API tokens,desc=po0 防火墙 API token（pgnfw_ 开头）
 IP-CIDR,124.221.69.228/32,DIRECT,no-resolve
 
 [Script]
-cron "*/10 * * * *" script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-firewall-whitelist.js, timeout=60, tag=po0-fw-cron, argument=[{tokens}]
-network-changed script-path=https://raw.githubusercontent.com/kelenetwork/po0fw/main/scripts/po0-firewall-whitelist.js, timeout=60, tag=po0-fw-event, argument=[{tokens}]
+cron "*/10 * * * *" script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-firewall-whitelist.js, timeout=60, tag=po0-fw-cron, argument=[{tokens}]
+network-changed script-path=https://raw.githubusercontent.com/w0ven/po0fw/main/scripts/po0-firewall-whitelist.js, timeout=60, tag=po0-fw-event, argument=[{tokens}]
