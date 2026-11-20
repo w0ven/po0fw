@@ -2,6 +2,7 @@
 #!desc=调用 po0 防火墙 API 将本机当前出口 IP 加入白名单。支持多 token（英文逗号分割，对应多台机器），network-changed 事件与每 10 分钟 cron 自动触发，附带手动刷新面板。
 #!category=po0
 #!author=reallinzc
+#!homepage=https://po0fw.uuuz.de/
 #!arguments=tokens:""
 #!arguments-desc=tokens: po0 防火墙 API token（pgnfw_ 开头），多台机器用英文逗号 , 分割；可选在 token 后加 @槽位（如 pgnfw_xxx@0）钉固定坑位、永不被淘汰
 

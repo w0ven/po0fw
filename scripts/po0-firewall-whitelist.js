@@ -14,10 +14,10 @@
  *
  * 策略：
  * - 每次直接 POST 上报当前出口 IP，蜂窝与 WiFi/有线同等处理。
- * - 默认 slotless 写入：按 updated_at 触发 LRU 淘汰，被挤出的设备靠自己的
+ * - 默认 slotless 写入：按 updated_at 触发 FIFO 淘汰，被挤出的设备靠自己的
  *   cron/事件几分钟内自动补回。
  * - 可选固定槽位：token 后加 @N（如 pgnfw_xxx@0）→ POST .../add?slot=N，
- *   把本机 IP 钉在槽位 N，**永不被 LRU 淘汰**。槽位写入语义：
+ *   把本机 IP 钉在槽位 N，**永不被淘汰**。槽位写入语义：
  *     · 本机 IP 已在该槽位 → 刷新 updated_at；
  *     · 槽位有旧 IP → 行级顶替，旧 IP 丢弃；
  *     · 本机 IP 已 slotless → 删 slotless 行升级到该槽位；
@@ -25,7 +25,7 @@
  * - 蜂窝（主接口 pdp_ip*）写入的 IP 仅做 📶 标记，便于面板识别。
  *
  * token 来源（优先级从高到低）：
- * 1. argument: tokens=<pgnfw_xxx>[@槽位],<pgnfw_yyy>（Surge/Loon/Stash 模块参数）
+ * 1. argument: tokens=<pgnfw_xxx>[@槽位],<pgnfw_yyy>（Surge/Loon/Stash/SR 模块参数）
  * 2. 持久化存储 key "po0fw_tokens"（Quantumult X 等不支持参数的客户端，
  *    可用 BoxJs 或一次性脚本写入）
  * 3. 下面的 INLINE_TOKENS 常量（自己维护脚本副本时直接填这里）
@@ -68,20 +68,34 @@ if (isLoon || isQX) REQUEST_TIMEOUT = 15000;
 else if (isSurgeFamily) REQUEST_TIMEOUT = 15;
 
 function storeRead(key) {
-  if (isQX) return $prefs.valueForKey(key);
-  if (typeof $persistentStore !== "undefined") return $persistentStore.read(key);
+  try {
+    if (isQX) return $prefs.valueForKey(key);
+    if (typeof $persistentStore !== "undefined") return $persistentStore.read(key);
+  } catch (e) {}
   return null;
 }
 
 function storeWrite(value, key) {
-  if (isQX) return $prefs.setValueForKey(value, key);
-  if (typeof $persistentStore !== "undefined") return $persistentStore.write(value, key);
+  try {
+    if (isQX) return $prefs.setValueForKey(value, key);
+    if (typeof $persistentStore !== "undefined") return $persistentStore.write(value, key);
+  } catch (e) {}
   return false;
 }
 
 function notify(title, subtitle, body) {
-  if (isQX) $notify(title, subtitle, body);
-  else if (typeof $notification !== "undefined") $notification.post(title, subtitle, body);
+  try {
+    if (isQX) $notify(title, subtitle, body);
+    else if (typeof $notification !== "undefined") $notification.post(title, subtitle, body);
+  } catch (e) {}
+}
+
+function safeDecodeURIComponent(s) {
+  try {
+    return decodeURIComponent(s);
+  } catch (e) {
+    return s;
+  }
 }
 
 // 各客户端失败时回传的 error 五花八门：Loon 在网络瞬断 / TLS 握手失败时
@@ -143,7 +157,7 @@ var HTTP_RETRY_DELAY_MS = 1500;
 // 几秒后同一 token 即成功。规范 JSON 错误（如 token 无效 {"code":400,...}）不重试。
 function isRetryableServerError(r) {
   if (!r || !r.status) return false;
-  if (r.status >= 500) return true;
+  if (r.status >= 500 || r.status === 429) return true;
   if (r.status >= 200 && r.status < 300) return false;
   if (r.status === 403) return false; // 槽位冲突，重试无意义
   try {
@@ -172,27 +186,62 @@ function getArgumentTokens() {
   if (typeof $argument === "undefined" || $argument === null) return "";
   // Loon 插件 argument=[{tokens}] 会注入对象形态
   if (typeof $argument === "object") return String($argument.tokens || "");
-  if (typeof $argument === "string" && $argument.length > 0) {
+  if (typeof $argument === "string") {
+    var arg = $argument.replace(/^\s+|\s+$/g, "");
+    if (!arg) return "";
     // Shadowrocket 等客户端可能把配置里的外层引号原样传入，先剥掉
-    if (/^["'].*["']$/.test($argument)) $argument = $argument.slice(1, -1);
+    if (/^["'].*["']$/.test(arg)) arg = arg.slice(1, -1).replace(/^\s+|\s+$/g, "");
     // Loon 也可能注入 JSON 字符串
-    if ($argument.charAt(0) === "{") {
+    if (arg.charAt(0) === "{") {
       try {
-        return String(JSON.parse($argument).tokens || "");
+        return String(JSON.parse(arg).tokens || "");
       } catch (e) {}
     }
     // Surge/Stash 风格 tokens=xxx&...
-    var pairs = $argument.split("&");
+    var pairs = arg.split("&");
     for (var i = 0; i < pairs.length; i++) {
       var idx = pairs[i].indexOf("=");
-      if (idx > 0 && pairs[i].slice(0, idx) === "tokens") {
-        return decodeURIComponent(pairs[i].slice(idx + 1));
+      if (idx > 0 && pairs[i].slice(0, idx).replace(/^\s+|\s+$/g, "") === "tokens") {
+        return safeDecodeURIComponent(pairs[i].slice(idx + 1).replace(/^\s+|\s+$/g, ""));
       }
     }
     // 直接把整串当 token 填的兜底（如 Loon argument="pgnfw_..."）
-    if ($argument.indexOf("pgnfw_") === 0) return $argument;
+    if (arg.indexOf("pgnfw_") === 0) return arg;
   }
   return "";
+}
+
+function parseTokenEntries(raw) {
+  return String(raw || "")
+    .split(/[,，|;、\s]+/)
+    .map(function (s) {
+      return s.replace(/^\s+|\s+$/g, "");
+    })
+    .filter(function (s) {
+      return s.indexOf("pgnfw_") === 0;
+    })
+    .map(function (s) {
+      var at = s.indexOf("@");
+      if (at === -1) return { token: s, slot: null, invalidError: null };
+      var tok = s.slice(0, at);
+      var slotRaw = s.slice(at + 1);
+      if (!/^\d+$/.test(slotRaw)) {
+        return {
+          token: tok,
+          slot: null,
+          invalidError: "槽位号 '@" + slotRaw + "' 无效（须为数字，如 @0）",
+        };
+      }
+      return { token: tok, slot: parseInt(slotRaw, 10), invalidError: null };
+    })
+    .filter(function (item) {
+      // 排除未替换的中文占位符（如 "pgnfw_你的token"）
+      if (/[^\x20-\x7E]/.test(item.token)) return false;
+      if (!/^pgnfw_[A-Za-z0-9_-]+$/.test(item.token) && !item.invalidError) {
+        item.invalidError = "token 含非法字符";
+      }
+      return true;
+    });
 }
 
 function onCellular() {
@@ -240,9 +289,10 @@ function sameC24(a, b) {
 function readHistory(key) {
   try {
     var h = JSON.parse(storeRead(key) || "[]");
+    if (!Array.isArray(h)) return [];
     var cutoff = Date.now() - HIST_WINDOW_MS;
     return h.filter(function (e) {
-      return e.ts > cutoff;
+      return e && e.ts > cutoff;
     });
   } catch (e) {
     return [];
@@ -276,7 +326,20 @@ function apiCall(token, slot) {
         currentIp: data && data.currentIp,
       };
     }
-    if (!data) return { error: "响应异常: " + String(r.body).slice(0, 80) };
+    var errStatus = r.status && (r.status < 200 || r.status >= 300) ? r.status : 0;
+    if (!errStatus && data && typeof data.code === "number" && data.code >= 400) {
+      errStatus = data.code;
+    }
+    if (errStatus) {
+      var msg =
+        (data && (data.message || data.error)) ||
+        String(r.body || "").replace(/^\s+|\s+$/g, "").slice(0, 80) ||
+        "请求被拒绝";
+      return { error: "HTTP " + errStatus + ": " + msg };
+    }
+    if (!data || (typeof data !== "object")) {
+      return { error: "响应异常: " + String(r.body).slice(0, 80) };
+    }
     // whitelist 元素为 {ip, slot} 对象（旧版曾是纯 IP 字符串）：记下 ip→slot 再摊平成 IP 数组
     var raw = Array.isArray(data.whitelist) ? data.whitelist : [];
     data.slotOf = {};
@@ -303,6 +366,11 @@ function ensureWhitelisted(item, index) {
   var cellular = onCellular();
   var ctx = { kvState: kvState, kvHist: kvHist, slot: item.slot };
 
+  if (item.invalidError) {
+    ctx.st = { error: item.invalidError };
+    return Promise.resolve(ctx);
+  }
+
   // 服务端对重复 IP 幂等，直接请求 /add 即可，无需先查
   return apiCall(item.token, item.slot).then(function (st) {
     if (st.applied) {
@@ -318,6 +386,13 @@ function ensureWhitelisted(item, index) {
   });
 }
 
+function isCellIpInHistory(hist, ip) {
+  for (var i = 0; i < hist.length; i++) {
+    if (hist[i].src === "cell" && sameC24(hist[i].ip, ip)) return true;
+  }
+  return false;
+}
+
 // 每 token 一行：不含 token，只含白名单/坑位信息；蜂窝加的 IP 标 📶
 function describe(index, ctx) {
   var st = ctx.st;
@@ -325,84 +400,88 @@ function describe(index, ctx) {
   var head = "#" + (index + 1) + pin + " ";
   if (st.error) return head + "❌ " + st.error;
   if (st.enabled === false) return head + "⚠️ 防火墙未启用";
-  if (!st.applied) return head + "❌ 加白未生效 " + st.whitelist.length + "/" + st.limit;
+  var limit = st.limit || 5;
+  var list = Array.isArray(st.whitelist) ? st.whitelist : [];
+  if (!st.applied) return head + "❌ 加白未生效 " + list.length + "/" + limit;
 
   var hist = readHistory(ctx.kvHist);
-  var cellIps = {};
-  hist.forEach(function (e) {
-    if (e.src === "cell") cellIps[e.ip] = true;
-  });
   var slotOf = st.slotOf || {};
-  var ips = st.whitelist
+  var ips = list
     .map(function (ip) {
       var slotTag = slotOf[ip] !== undefined ? " 📌" + slotOf[ip] : "";
-      return ip + slotTag + (cellIps[ip] ? " 📶" : "") + (sameC24(ip, st.currentIp) ? " ←" : "");
+      var cellTag = isCellIpInHistory(hist, ip) ? " 📶" : "";
+      return ip + slotTag + cellTag + (sameC24(ip, st.currentIp) ? " ←" : "");
     })
     .join("\n    ");
-  return head + "✅ " + st.whitelist.length + "/" + st.limit + "\n    " + ips;
+  return head + "✅ " + list.length + "/" + limit + "\n    " + ips;
 }
 
-// 分隔符兼容 , | ; 、；非 pgnfw_ 开头的段（如未修改的占位提示）直接忽略。
-// 每段可带可选 @槽位 后缀：pgnfw_xxx@0 → 钉槽位 0；无后缀则 slotless。
-var tokens = (getArgumentTokens() || storeRead(TOKENS_KEY) || INLINE_TOKENS || "")
-  .split(/[,|;、\s]+/)
-  .map(function (s) {
-    return s.trim();
-  })
-  .filter(function (s) {
-    return s.indexOf("pgnfw_") === 0;
-  })
-  .map(function (s) {
-    var at = s.indexOf("@");
-    if (at === -1) return { token: s, slot: null };
-    var n = parseInt(s.slice(at + 1), 10);
-    return { token: s.slice(0, at), slot: isNaN(n) ? null : n };
-  });
+(function main() {
+  try {
+    var tokens = parseTokenEntries(getArgumentTokens() || storeRead(TOKENS_KEY) || INLINE_TOKENS || "");
 
-if (tokens.length === 0) {
-  notify(
-    "po0 防火墙加白",
-    "未配置 token",
-    "模块参数 tokens / 存储 key po0fw_tokens / 脚本内 INLINE_TOKENS 三选一填入 pgnfw_ token"
-  );
-  finish("po0 加白：未配置 token", "请填入 pgnfw_ token，多个用 | 分割", false);
-} else {
-  Promise.all(
-    tokens.map(function (t, i) {
-      return ensureWhitelisted(t, i);
-    })
-  ).then(function (results) {
-    var okCount = 0;
-    var exitIp = "?";
-    var lines = [];
-    var changed = false;
-
-    for (var i = 0; i < results.length; i++) {
-      var st = results[i].st;
-      if (st.applied) okCount++;
-      if (st.currentIp) exitIp = st.currentIp;
-      lines.push(describe(i, results[i]));
-
-      var state = (st.currentIp || "?") + "|" + (st.applied ? "1" : "0");
-      if (storeRead(results[i].kvState) !== state) {
-        storeWrite(state, results[i].kvState);
-        changed = true;
-      }
+    if (tokens.length === 0) {
+      notify(
+        "po0 防火墙加白",
+        "未配置 token",
+        "模块参数 tokens / 存储 key po0fw_tokens / 脚本内 INLINE_TOKENS 三选一填入 pgnfw_ token"
+      );
+      finish("po0 加白：未配置 token", "请填入 pgnfw_ token，多个用 , 或 | 分割", false);
+      return;
     }
 
-    var allOk = okCount === results.length;
-    var title =
-      "po0 加白 " + okCount + "/" + results.length + " · 出口 " + exitIp + (onCellular() ? " 📶" : "");
-    var content = lines.join("\n");
+    Promise.all(
+      tokens.map(function (t, i) {
+        return ensureWhitelisted(t, i);
+      })
+    )
+      .then(function (results) {
+        var okCount = 0;
+        var exitIp = "?";
+        var lines = [];
+        var changed = false;
 
-    // 成功态仅在出口 IP / 加白状态变化时通知；失败/未生效必须每次弹，
-    // 否则持久化状态相同（都是失败）时 changed=false 会把错误静默吞掉。
-    if (changed || !allOk) {
-      notify("po0 防火墙加白", title, content);
-    }
-    finish(title, content, allOk);
-  }).catch(function (e) {
-    notify("po0 防火墙加白", "脚本异常", String(e && e.message ? e.message : e));
-    finish("po0 加白：脚本异常", String(e && e.message ? e.message : e), false);
-  });
-}
+        for (var i = 0; i < results.length; i++) {
+          var st = results[i].st;
+          if (st.applied) okCount++;
+          if (st.currentIp) exitIp = st.currentIp;
+          lines.push(describe(i, results[i]));
+
+          var slotKey =
+            results[i].slot !== null && results[i].slot !== undefined ? String(results[i].slot) : "-";
+          var state = (st.currentIp || "?") + "|" + (st.applied ? "1" : "0") + "|" + slotKey;
+          if (storeRead(results[i].kvState) !== state) {
+            storeWrite(state, results[i].kvState);
+            changed = true;
+          }
+        }
+
+        var allOk = okCount === results.length;
+        var title =
+          "po0 加白 " +
+          okCount +
+          "/" +
+          results.length +
+          " · 出口 " +
+          exitIp +
+          (onCellular() ? " 📶" : "");
+        var content = lines.join("\n");
+
+        // 成功态仅在出口 IP / 加白状态 / 槽位变化时通知；失败/未生效必须每次弹，
+        // 否则持久化状态相同（都是失败）时 changed=false 会把错误静默吞掉。
+        if (changed || !allOk) {
+          notify("po0 防火墙加白", title, content);
+        }
+        finish(title, content, allOk);
+      })
+      .catch(function (e) {
+        var msg = String(e && e.message ? e.message : e);
+        notify("po0 防火墙加白", "脚本异常", msg);
+        finish("po0 加白：脚本异常", msg, false);
+      });
+  } catch (e) {
+    var msg = String(e && e.message ? e.message : e);
+    notify("po0 防火墙加白", "脚本异常", msg);
+    finish("po0 加白：脚本异常", msg, false);
+  }
+})();

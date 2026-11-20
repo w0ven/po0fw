@@ -18,10 +18,12 @@ const API_BASE = "https://124.221.69.228/api/firewall/"; // + <token> + "/add"
 const STORE_PREFIX = "po0_fw_";
 const HIST_WINDOW_MS = 24 * 3600 * 1000; // 📶 标记的记账窗口
 
-// tokens 分隔符兼容 , | ; 、 空白；每段可带 @槽位 后缀
+// tokens 分隔符兼容 , ， | ; 、 空白；每段可带 @槽位 后缀
 function parseTokens(raw) {
-  return String(raw || "")
-    .split(/[,|;、\s]+/)
+  let str = String(raw || "").trim();
+  if (/^["'].*["']$/.test(str)) str = str.slice(1, -1).trim();
+  return str
+    .split(/[,，|;、\s]+/)
     .map(function (s) {
       return s.trim();
     })
@@ -30,9 +32,24 @@ function parseTokens(raw) {
     })
     .map(function (s) {
       const at = s.indexOf("@");
-      if (at === -1) return { token: s, slot: null };
-      const n = parseInt(s.slice(at + 1), 10);
-      return { token: s.slice(0, at), slot: isNaN(n) ? null : n };
+      if (at === -1) return { token: s, slot: null, invalidError: null };
+      const tok = s.slice(0, at);
+      const slotRaw = s.slice(at + 1);
+      if (!/^\d+$/.test(slotRaw)) {
+        return {
+          token: tok,
+          slot: null,
+          invalidError: "槽位号 '@" + slotRaw + "' 无效（须为数字，如 @0）",
+        };
+      }
+      return { token: tok, slot: parseInt(slotRaw, 10), invalidError: null };
+    })
+    .filter(function (item) {
+      if (/[^\x20-\x7E]/.test(item.token)) return false;
+      if (!/^pgnfw_[A-Za-z0-9_-]+$/.test(item.token) && !item.invalidError) {
+        item.invalidError = "token 含非法字符";
+      }
+      return true;
     });
 }
 
@@ -75,7 +92,7 @@ const HTTP_RETRY_DELAY_MS = 1500;
 
 function isRetryableServerError(status, text) {
   if (!status) return false;
-  if (status >= 500) return true;
+  if (status >= 500 || status === 429) return true;
   if (status >= 200 && status < 300) return false;
   if (status === 403) return false; // 槽位冲突，重试无意义
   try {
@@ -143,10 +160,18 @@ async function apiCall(ctx, token, slot) {
       currentIp: data && data.currentIp,
     };
   }
-  if (!data) {
-    if (status && (status < 200 || status >= 300)) {
-      return { error: "服务端 " + status + ": " + (String(text).slice(0, 80) || "无响应体") };
-    }
+  let errStatus = status && (status < 200 || status >= 300) ? status : 0;
+  if (!errStatus && data && typeof data.code === "number" && data.code >= 400) {
+    errStatus = data.code;
+  }
+  if (errStatus) {
+    const msg =
+      (data && (data.message || data.error)) ||
+      String(text || "").trim().slice(0, 80) ||
+      "请求被拒绝";
+    return { error: "HTTP " + errStatus + ": " + msg };
+  }
+  if (!data || typeof data !== "object") {
     return { error: "响应异常: " + String(text).slice(0, 80) };
   }
   // 服务端按 C 段（/24）加白，whitelist 与 currentIp 都可能是 x.x.x.0/24
@@ -186,16 +211,28 @@ function sameC24(a, b) {
 async function ensure(ctx, item, index, cellular) {
   const kvState = STORE_PREFIX + index;
   const kvHist = STORE_PREFIX + "hist_" + index;
+  if (item.invalidError) {
+    return { kvState: kvState, kvHist: kvHist, slot: item.slot, st: { error: item.invalidError } };
+  }
   const st = await apiCall(ctx, item.token, item.slot);
   if (st.applied) {
     const hist = readHistory(ctx, kvHist);
     const last = hist.length ? hist[hist.length - 1] : null;
     if (!last || last.ip !== st.currentIp) {
       hist.push({ ip: st.currentIp, src: cellular ? "cell" : "fixed", ts: Date.now() });
-      ctx.storage.setJSON(kvHist, hist.slice(-10));
+      try {
+        ctx.storage.setJSON(kvHist, hist.slice(-10));
+      } catch (e) {}
     }
   }
   return { kvState: kvState, kvHist: kvHist, slot: item.slot, st: st };
+}
+
+function isCellIpInHistory(hist, ip) {
+  for (let i = 0; i < hist.length; i++) {
+    if (hist[i].src === "cell" && sameC24(hist[i].ip, ip)) return true;
+  }
+  return false;
 }
 
 // 每 token 一行：不含 token，只含白名单/坑位信息；钉住的槽位标 📌，蜂窝加的 IP 标 📶
@@ -205,61 +242,73 @@ function describe(ctx, index, c) {
   const head = "#" + (index + 1) + pin + " ";
   if (st.error) return head + "❌ " + st.error;
   if (st.enabled === false) return head + "⚠️ 防火墙未启用";
-  if (!st.applied) return head + "❌ 加白未生效 " + ((st.whitelist && st.whitelist.length) || 0) + "/" + st.limit;
+  const limit = st.limit || 5;
+  const list = Array.isArray(st.whitelist) ? st.whitelist : [];
+  if (!st.applied) return head + "❌ 加白未生效 " + list.length + "/" + limit;
 
   const hist = readHistory(ctx, c.kvHist);
-  const cellIps = {};
-  hist.forEach(function (e) {
-    if (e.src === "cell") cellIps[e.ip] = true;
-  });
   const slotOf = st.slotOf || {};
-  const ips = st.whitelist
+  const ips = list
     .map(function (ip) {
       const slotTag = slotOf[ip] !== undefined ? " 📌" + slotOf[ip] : "";
-      return ip + slotTag + (cellIps[ip] ? " 📶" : "") + (sameC24(ip, st.currentIp) ? " ←" : "");
+      const cellTag = isCellIpInHistory(hist, ip) ? " 📶" : "";
+      return ip + slotTag + cellTag + (sameC24(ip, st.currentIp) ? " ←" : "");
     })
     .join("\n    ");
-  return head + "✅ " + st.whitelist.length + "/" + st.limit + "\n    " + ips;
+  return head + "✅ " + list.length + "/" + limit + "\n    " + ips;
 }
 
 export default async function (ctx) {
-  const tokens = parseTokens(ctx.env && ctx.env.tokens);
-  if (tokens.length === 0) {
-    ctx.notify({
-      title: "po0 防火墙加白",
-      subtitle: "未配置 token",
-      body: "模块参数 tokens 填入 pgnfw_ token，多个用英文逗号分割",
-    });
-    return;
-  }
-
-  const cellular = onCellular(ctx);
-  const results = [];
-  for (let i = 0; i < tokens.length; i++) {
-    results.push(await ensure(ctx, tokens[i], i, cellular));
-  }
-
-  let okCount = 0;
-  let exitIp = "?";
-  let changed = false;
-  const lines = [];
-  for (let i = 0; i < results.length; i++) {
-    const st = results[i].st;
-    if (st.applied) okCount++;
-    if (st.currentIp) exitIp = st.currentIp;
-    lines.push(describe(ctx, i, results[i]));
-
-    const state = (st.currentIp || "?") + "|" + (st.applied ? "1" : "0");
-    if (ctx.storage.get(results[i].kvState) !== state) {
-      ctx.storage.set(results[i].kvState, state);
-      changed = true;
+  try {
+    const tokens = parseTokens(ctx.env && ctx.env.tokens);
+    if (tokens.length === 0) {
+      ctx.notify({
+        title: "po0 防火墙加白",
+        subtitle: "未配置 token",
+        body: "模块参数 tokens 填入 pgnfw_ token，多个用英文逗号分割",
+      });
+      return;
     }
-  }
 
-  const title =
-    "po0 加白 " + okCount + "/" + results.length + " · 出口 " + exitIp + (cellular ? " 📶" : "");
-  // 仅在出口 IP 或加白状态较上次变化时通知，例行 cron 保持安静
-  if (changed) {
-    ctx.notify({ title: "po0 防火墙加白", subtitle: title, body: lines.join("\n") });
+    const cellular = onCellular(ctx);
+    const results = await Promise.all(
+      tokens.map(function (t, i) {
+        return ensure(ctx, t, i, cellular);
+      })
+    );
+
+    let okCount = 0;
+    let exitIp = "?";
+    let changed = false;
+    const lines = [];
+    for (let i = 0; i < results.length; i++) {
+      const st = results[i].st;
+      if (st.applied) okCount++;
+      if (st.currentIp) exitIp = st.currentIp;
+      lines.push(describe(ctx, i, results[i]));
+
+      const slotKey =
+        results[i].slot !== null && results[i].slot !== undefined ? String(results[i].slot) : "-";
+      const state = (st.currentIp || "?") + "|" + (st.applied ? "1" : "0") + "|" + slotKey;
+      try {
+        if (ctx.storage.get(results[i].kvState) !== state) {
+          ctx.storage.set(results[i].kvState, state);
+          changed = true;
+        }
+      } catch (e) {
+        changed = true;
+      }
+    }
+
+    const allOk = okCount === results.length;
+    const title =
+      "po0 加白 " + okCount + "/" + results.length + " · 出口 " + exitIp + (cellular ? " 📶" : "");
+    // 成功态仅在出口 IP / 加白状态 / 槽位变化时通知；失败或未生效每次必弹，防止错误被静默吞掉
+    if (changed || !allOk) {
+      ctx.notify({ title: "po0 防火墙加白", subtitle: title, body: lines.join("\n") });
+    }
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    ctx.notify({ title: "po0 防火墙加白", subtitle: "脚本异常", body: msg });
   }
 }

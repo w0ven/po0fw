@@ -4,7 +4,7 @@ desc: |-
   每 10 分钟 cron 自动触发，附手动刷新磁贴。安装后把下方两处 argument 的
   tokens= 后面填上 pgnfw_ token。可选：token 后加 @槽位（如 pgnfw_xxx@0）钉固定坑位、永不被淘汰。
 category: po0
-icon: https://raw.githubusercontent.com/Koolson/Qure/master/IconSet/Color/Panel.png
+icon: https://po0fw.uuuz.de/icons/po0fw.png
 
 rules:
   - IP-CIDR,124.221.69.228/32,DIRECT,no-resolve

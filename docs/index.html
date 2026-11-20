@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>po0fw — po0 防火墙自动加白</title>
 <meta name="description" content="po0 防火墙白名单自动加白，覆盖软路由 / PC / 安卓 / iOS 全平台，一次配置永久生效">
+<link rel="icon" type="image/png" href="icons/po0fw.png">
 <style>
 :root{
   --bg:#fafafa; --card:#fff;
@@ -29,7 +30,8 @@ code{font-family:var(--mono);font-size:.86em;background:#f1f3f2;border:1px solid
 /* ============ top nav ============ */
 nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.86);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
 nav .wrap{display:flex;align-items:center;gap:28px;height:60px}
-.brand{font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--ink)}
+.brand{font-weight:800;font-size:17px;letter-spacing:-.3px;color:var(--ink);display:inline-flex;align-items:center;gap:8px}
+.brand img{width:22px;height:22px;border-radius:5px}
 .brand b{color:var(--brand)}
 .navlinks{display:flex;gap:4px;flex:1}
 .navlinks a{color:var(--ink2);font-size:14px;padding:6px 12px;border-radius:8px;transition:.15s}
@@ -71,13 +73,16 @@ h2{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:10px}
 /* ============ token bar ============ */
 .tokenwrap{background:linear-gradient(135deg,#0d3b26,#0b8f4d);border-radius:16px;padding:26px 28px;color:#fff;box-shadow:var(--shadow-lg)}
 .tokenwrap .tt{font-weight:700;font-size:16px}
-.tokenwrap .td{font-size:13.5px;color:rgba(255,255,255,.75);margin:4px 0 14px}
-.tokenrow{display:flex;gap:10px;flex-wrap:wrap}
+.tokenwrap .td{font-size:13.5px;color:rgba(255,255,255,.78);margin:4px 0 14px}
+.tokenrow{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .tokenrow input{flex:1;min-width:240px;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.25);border-radius:10px;color:#fff;font-family:var(--mono);font-size:13.5px;padding:12px 16px;outline:none;transition:.15s}
 .tokenrow input::placeholder{color:rgba(255,255,255,.45)}
 .tokenrow input:focus{border-color:rgba(255,255,255,.7);background:rgba(255,255,255,.16)}
-.tokenrow .state{display:flex;align-items:center;font-size:13px;color:rgba(255,255,255,.8);white-space:nowrap;font-weight:600}
+.tokenrow .state{display:flex;align-items:center;font-size:13px;color:rgba(255,255,255,.82);white-space:nowrap;font-weight:600}
 .tokenrow .state.ok::before{content:"✓ ";font-weight:800}
+.tokenrow .state.err{color:#fde68a}
+.tokclear{display:none;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.26);color:#fff;font-family:inherit;font-size:12.5px;font-weight:600;padding:8px 12px;border-radius:8px;cursor:pointer;transition:.15s}
+.tokclear:hover{background:rgba(255,255,255,.24)}
 .tokentips{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px}
 @media(max-width:720px){.tokentips{grid-template-columns:1fr}}
 .tokentips .tip{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:14px 16px}
@@ -105,6 +110,13 @@ h2{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:10px}
 .note b{color:#0f3d22}
 .warn{margin:18px 0 0 36px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;font-size:13.5px;color:#713f12}
 
+.ios-tokbar{display:none;margin:0 0 18px 36px;background:var(--brand-soft);border:1px solid var(--brand-line);border-radius:10px;padding:10px 14px;font-size:13px;color:#14532d;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.ios-tokbar.on{display:flex}
+.ios-tokbar .btns{display:flex;gap:8px;flex-wrap:wrap}
+.ios-tokbar button{font-family:inherit;font-size:12.5px;font-weight:600;background:#fff;border:1px solid var(--brand-line);color:var(--brand-strong);padding:5px 12px;border-radius:7px;cursor:pointer;transition:.15s}
+.ios-tokbar button:hover{border-color:var(--brand);background:#f4fbf7}
+.ios-tokbar button.done{background:var(--brand);border-color:var(--brand);color:#fff}
+
 /* code block */
 .cb{position:relative;margin:12px 0 0 36px;background:#141a17;border-radius:10px;box-shadow:var(--shadow-sm)}
 .cb pre{padding:16px 18px;padding-right:86px;overflow-x:auto;font-family:var(--mono);font-size:12.8px;line-height:1.8;color:#d6e5dc}
@@ -112,7 +124,7 @@ h2{font-size:26px;font-weight:800;letter-spacing:-.5px;margin-bottom:10px}
 .cb .cp{position:absolute;top:10px;right:10px;font-family:inherit;font-size:12px;font-weight:600;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);color:#cbd5d1;border-radius:7px;padding:5px 13px;cursor:pointer;transition:.15s}
 .cb .cp:hover{background:rgba(255,255,255,.18);color:#fff}
 .cb .cp.done{background:var(--brand);border-color:var(--brand);color:#fff}
-@media(max-width:640px){.cb,.note,.warn,.stepbody{margin-left:0}}
+@media(max-width:640px){.cb,.note,.warn,.stepbody,.ios-tokbar{margin-left:0}}
 
 /* ============ client cards (interactive) ============ */
 .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
@@ -179,11 +191,12 @@ footer a{color:var(--ink2)}
 
 <nav>
   <div class="wrap">
-    <span class="brand">po0<b>fw</b></span>
+    <span class="brand"><img src="icons/po0fw.png" alt=""><span>po0<b>fw</b></span></span>
     <div class="navlinks">
       <a href="#how">原理</a>
       <a href="#install">安装</a>
       <a href="#preview">效果</a>
+      <a href="#community">社群</a>
       <a href="#faq">FAQ</a>
     </div>
     <a class="gh" href="https://github.com/w0ven/po0fw">GitHub ↗</a>
@@ -230,11 +243,12 @@ footer a{color:var(--ink2)}
     <p class="desc">token 在 po0 控制台机器详情页「防火墙」卡片 →「复制添加脚本」里，<code>pgnfw_</code> 开头那串。一台机器一个 token，请勿公开分享。</p>
 
     <div class="tokenwrap">
-      <div class="tt">🔑 先粘贴你的 token</div>
-      <div class="td">本页所有安装命令和模块链接会自动带上它，复制即用。只保存在你的浏览器里，不会上传。</div>
+      <div class="tt">🔑 先粘贴你的 token（支持多台机器与 @槽位）</div>
+      <div class="td">本页安装命令、安卓请求地址与 iOS 参数复制条会自动生成对应格式。仅保存在当前浏览器本地，绝不上传服务端。</div>
       <div class="tokenrow">
-        <input id="tok" type="text" placeholder="pgnfw_××××××××" autocomplete="off" spellcheck="false">
+        <input id="tok" type="text" placeholder="pgnfw_xxx@0 或 pgnfw_机器A@0,pgnfw_机器B" autocomplete="off" spellcheck="false" aria-label="po0 防火墙 token">
         <span class="state" id="tokState">未填写，命令中显示占位符</span>
+        <button type="button" class="tokclear" id="tokClear">清空</button>
       </div>
       <div class="tokentips">
         <div class="tip">
@@ -243,48 +257,49 @@ footer a{color:var(--ink2)}
         </div>
         <div class="tip">
           <div class="th">🖥 多台 po0 机器一次填完</div>
-          <div class="tb">每台机器 token 不同，拼起来填一处即可，设备换 IP 时所有机器同时更新：<br><b>pgnfw_机器A,pgnfw_机器B</b><br>分隔符用<b>英文逗号</b>；Shadowrocket / Quantumult X 请改用 <code>|</code> 分隔。也可混用槽位：<code>pgnfw_A@0,pgnfw_B</code>。</div>
+          <div class="tb">每台机器 token 不同，拼起来填一处即可，设备换 IP 时所有机器同时更新：<br><b>pgnfw_机器A,pgnfw_机器B</b><br>分隔符用<b>英文逗号</b>（Shadowrocket 模块原文编辑时请用 <code>|</code> 分隔）。也可混用槽位：<code>pgnfw_A@0,pgnfw_B</code>。</div>
         </div>
       </div>
     </div>
 
     <div style="height:34px"></div>
 
-    <div class="seg" id="tabs">
-      <button class="on" data-pane="router">软路由 ⭐</button>
-      <button data-pane="pc">PC</button>
-      <button data-pane="android">安卓</button>
-      <button data-pane="ios">iOS / Mac</button>
+    <div class="seg" id="tabs" role="tablist" aria-label="选择设备平台">
+      <button type="button" role="tab" aria-selected="true" class="on" data-pane="router">软路由 ⭐</button>
+      <button type="button" role="tab" aria-selected="false" data-pane="pc">PC</button>
+      <button type="button" role="tab" aria-selected="false" data-pane="android">安卓</button>
+      <button type="button" role="tab" aria-selected="false" data-pane="ios">iOS / Mac</button>
     </div>
 
     <!-- 软路由 -->
-    <div class="pane on" id="pane-router">
+    <div class="pane on" id="pane-router" role="tabpanel">
       <div class="stepline"><span class="no">1</span><h3>SSH 登录路由器，执行安装命令</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
+      <div class="cb"><button type="button" class="cp">复制</button><pre>curl -fsSL https://raw.githubusercontent.com/w0ven/po0fw/main/openwrt/install-openwrt.sh -o /tmp/i.sh
 PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh /tmp/i.sh</pre></div>
       <div class="stepline"><span class="no">2</span><h3>完成 —— 已自动配置双触发</h3></div>
-      <div class="stepbody">cron 每 10 分钟兜底 + WAN 拨号/重连事件<b>秒级</b>加白。跑一次 <code>po0fw</code> 验证，日志在 <code>/tmp/po0fw.log</code>。</div>
+      <div class="stepbody">cron 每 10 分钟兜底 + WAN 拨号/重连事件<b>秒级</b>加白。跑一次 <code>po0fw status</code> 查看状态，日志在 <code>/tmp/po0fw.log</code>。</div>
       <div class="note"><b>为什么最推荐装这里：</b>只有路由器能第一时间感知家宽重拨；且全家设备连 Wi-Fi 都被它覆盖，手机电脑就不用再各装一份。家宽出口建议钉固定槽位：token 写成 <code>pgnfw_xxx@0</code>（详见 FAQ）。</div>
     </div>
 
     <!-- PC -->
-    <div class="pane" id="pane-pc">
+    <div class="pane" id="pane-pc" role="tabpanel">
       <div class="stepline"><span class="no">1</span><h3>Linux / macOS —— 一条命令</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>curl -sSL https://raw.githubusercontent.com/w0ven/po0fw/main/install-linux.sh | PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh</pre></div>
-      <div class="stepbody">root 自动注册 systemd timer；macOS / 非 root 写入 crontab，均为每 10 分钟。</div>
+      <div class="cb"><button type="button" class="cp">复制</button><pre>curl -fsSL https://raw.githubusercontent.com/w0ven/po0fw/main/install-linux.sh | PO0FW_TOKENS="<span class="tk" data-t>pgnfw_你的token</span>" sh</pre></div>
+      <div class="stepbody">Linux root 自动注册 systemd timer（<code>/usr/local/bin/po0fw</code>）；macOS / 非 root 自动安装到 <code>~/.local/bin/po0fw</code> 并写入 crontab，均为每 10 分钟。</div>
       <div class="stepline"><span class="no">2</span><h3>Windows —— 管理员 PowerShell</h3></div>
-      <div class="cb"><button class="cp">复制</button><pre>irm https://raw.githubusercontent.com/w0ven/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
+      <div class="cb"><button type="button" class="cp">复制</button><pre>irm https://raw.githubusercontent.com/w0ven/po0fw/main/windows/install-windows.ps1 -OutFile i.ps1
 powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>pgnfw_你的token</span>"</pre></div>
-      <div class="stepbody">注册计划任务：每 10 分钟 + 网络连接事件双触发。</div>
-      <div class="note"><b>常用命令：</b><code>po0fw</code> 立即加白 · <code>po0fw status</code> 查看白名单 · 改 token 编辑 <code>/etc/po0fw.conf</code>（Windows 为 <code>%ProgramData%\po0fw\po0fw.conf</code>）。</div>
+      <div class="stepbody">注册静默计划任务：每 10 分钟 + 网络连接事件双触发，无弹窗闪烁。</div>
+      <div class="note"><b>常用命令：</b><code>po0fw</code> 立即加白 · <code>po0fw status</code> 查看白名单 · 改 token 编辑 <code>/etc/po0fw.conf</code>（非 root 为 <code>~/.config/po0fw/po0fw.conf</code>，Windows 为 <code>%ProgramData%\po0fw\po0fw.conf</code>）。</div>
       <p class="community-option"><b>社群客户端：</b>热心网友还提供了内置加白的 <a href="https://wiki.uuuz.de/guide/clients/po0-clash">po0-clash（Windows / macOS）</a>。可以查看使用教程，或到下方<a href="#community">社群共建</a>了解项目。现有客户端也可继续使用上面的独立脚本。</p>
     </div>
 
     <!-- 安卓 -->
-    <div class="pane" id="pane-android">
+    <div class="pane" id="pane-android" role="tabpanel">
       <div class="stepline"><span class="no">1</span><h3>装 MacroDroid，建第一个宏：切网即时加白</h3></div>
       <div class="stepbody">触发器选「<b>网络连接变化</b>」（Wi-Fi 与移动数据都勾选）；动作选「HTTP 请求」，方法 <b>POST</b>，URL 填：</div>
-      <div class="cb"><button class="cp">复制</button><pre>https://124.221.69.228/api/firewall/<span class="tk" data-t>pgnfw_你的token</span>/add</pre></div>
+      <div class="cb"><button type="button" class="cp">复制</button><pre id="android-urls">https://124.221.69.228/api/firewall/<span class="tk">pgnfw_你的token</span>/add</pre></div>
+      <div class="stepbody" id="android-multi-hint" style="display:none;margin-top:8px;color:var(--brand-strong);font-weight:600"></div>
       <div class="stepline"><span class="no">2</span><h3>建第二个宏：15 分钟定时兜底</h3></div>
       <div class="stepbody">触发器「<b>定期触发</b>」间隔 15 分钟，同样的 HTTP POST 动作，再加一个「网络已连接」约束。这个宏负责捕捉<b>静默换 IP</b>（Wi-Fi 没断但公网 IP 变了、蜂窝换 IP）。</div>
       <div class="stepline"><span class="no">3</span><h3>关闭电池优化</h3></div>
@@ -294,39 +309,46 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
     </div>
 
     <!-- iOS -->
-    <div class="pane" id="pane-ios">
+    <div class="pane" id="pane-ios" role="tabpanel">
       <div class="stepline"><span class="no">1</span><h3>选择你的客户端，一键安装模块</h3></div>
-      <div class="stepbody" style="margin-bottom:16px">模块带面板显示、蜂窝 📶 标记、切网即时触发 + 每 10 分钟 cron。上方填过 token 的话，安装链接已自动带上参数。</div>
+      <div class="stepbody" style="margin-bottom:16px">模块带面板显示、蜂窝 📶 标记、切网即时触发 + 每 10 分钟 cron。为保护隐私，静态模块不经服务端注入 token，装好后把 token 粘贴进模块参数即可。</div>
+      <div class="ios-tokbar" id="iosTokBar">
+        <span>🔑 已就绪：安装模块后一键复制粘贴你的 token 参数</span>
+        <div class="btns">
+          <button type="button" id="copyCommaTok">复制 token（通用逗号版）</button>
+          <button type="button" id="copyPipeTok" style="display:none">复制 Shadowrocket 版（| 分隔）</button>
+        </div>
+      </div>
       <div class="cards">
         <div class="card">
           <div class="hd"><img src="icons/surge.png" alt="Surge"><div><div class="nm">Surge</div><div class="ct">iOS / Mac · sgmodule</div></div></div>
           <div class="desc2">安装时在模块参数 tokens 填入 token，首页自带手动刷新面板。</div>
-          <div class="acts"><a class="bi" data-scheme="surge:///install-module?url={U}" data-file="surge/po0-firewall-whitelist.sgmodule">一键安装</a><button class="bc" data-file="surge/po0-firewall-whitelist.sgmodule">复制链接</button></div>
+          <div class="acts"><a class="bi" data-scheme="surge:///install-module?url={U}" data-file="surge/po0-firewall-whitelist.sgmodule">一键安装</a><button type="button" class="bc" data-file="surge/po0-firewall-whitelist.sgmodule">复制链接</button></div>
         </div>
         <div class="card">
           <div class="hd"><img src="icons/loon.png" alt="Loon"><div><div class="nm">Loon</div><div class="ct">iOS · plugin</div></div></div>
           <div class="desc2">安装后进插件设置，在 API tokens 输入框填入 token。可在「脚本」列表手动执行立即加白。</div>
-          <div class="acts"><a class="bi" data-scheme="loon://import?plugin={U}" data-file="loon/po0-firewall-whitelist.plugin">一键安装</a><button class="bc" data-file="loon/po0-firewall-whitelist.plugin">复制链接</button></div>
+          <div class="acts"><a class="bi" data-scheme="loon://import?plugin={U}" data-file="loon/po0-firewall-whitelist.plugin">一键安装</a><button type="button" class="bc" data-file="loon/po0-firewall-whitelist.plugin">复制链接</button></div>
         </div>
         <div class="card">
           <div class="hd"><img src="icons/stash.png" alt="Stash"><div><div class="nm">Stash</div><div class="ct">iOS · stoverride</div></div></div>
           <div class="desc2">安装后编辑覆写，把两处 argument: tokens= 补全。附手动刷新磁贴。</div>
-          <div class="acts"><a class="bi" data-scheme="stash://install-override?url={U}" data-file="stash/po0-firewall-whitelist.stoverride">一键安装</a><button class="bc" data-file="stash/po0-firewall-whitelist.stoverride">复制链接</button></div>
+          <div class="acts"><a class="bi" data-scheme="stash://install-override?url={U}" data-file="stash/po0-firewall-whitelist.stoverride">一键安装</a><button type="button" class="bc" data-file="stash/po0-firewall-whitelist.stoverride">复制链接</button></div>
         </div>
         <div class="card">
           <div class="hd"><img src="icons/shadowrocket.png" alt="Shadowrocket"><div><div class="nm">Shadowrocket</div><div class="ct">iOS · srmodule</div></div></div>
           <div class="desc2">SR 不支持参数模板：装好后长按模块 → <b>编辑纯文本</b>，把两行 <code>argument=tokens=</code> 后的占位替换成你的 token（多台机器用 | 分割）。</div>
-          <div class="acts"><a class="bi" data-scheme="shadowrocket://install?module={U}" data-file="shadowrocket/po0-firewall-whitelist.srmodule">一键安装</a><button class="bc" data-file="shadowrocket/po0-firewall-whitelist.srmodule">复制链接</button></div>
+          <div class="acts"><a class="bi" data-scheme="shadowrocket://install?module={U}" data-file="shadowrocket/po0-firewall-whitelist.srmodule">一键安装</a><button type="button" class="bc" data-file="shadowrocket/po0-firewall-whitelist.srmodule">复制链接</button></div>
         </div>
         <div class="card">
           <div class="hd"><img src="icons/egern.png" alt="Egern"><div><div class="nm">Egern</div><div class="ct">iOS / Mac · 原生模块</div></div></div>
           <div class="desc2">安装后在模块参数 tokens 填入 token（多台机器英文逗号分割）。</div>
-          <div class="acts"><a class="bi" data-scheme="egern:/modules/new?url={U}" data-file="egern/po0-firewall-whitelist.yaml">一键安装</a><button class="bc" data-file="egern/po0-firewall-whitelist.yaml">复制链接</button></div>
+          <div class="acts"><a class="bi" data-scheme="egern:/modules/new?url={U}" data-file="egern/po0-firewall-whitelist.yaml">一键安装</a><button type="button" class="bc" data-file="egern/po0-firewall-whitelist.yaml">复制链接</button></div>
         </div>
         <div class="card">
           <div class="hd"><img src="icons/quantumultx.png" alt="Quantumult X"><div><div class="nm">Quantumult X</div><div class="ct">iOS · task 片段</div></div></div>
           <div class="desc2">QX 不支持远程订阅定时任务：复制片段手动加进 [task_local]；token 用 BoxJs 写 key po0fw_tokens。</div>
-          <div class="acts"><button class="bc" style="flex:1" data-file="quantumultx/po0-firewall-whitelist.snippet">复制片段链接</button></div>
+          <div class="acts"><button type="button" class="bc" style="flex:1" data-file="quantumultx/po0-firewall-whitelist.snippet">复制片段链接</button></div>
         </div>
       </div>
       <div class="warn" style="margin-left:0"><b>一键按钮没反应？</b>部分浏览器会拦截 App 跳转 —— 点「复制链接」，到客户端里「从 URL 安装 / 导入」即可。</div>
@@ -341,18 +363,19 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
   <div class="wrap">
     <div class="eyebrow">What you get</div>
     <h2>装完之后</h2>
-    <p class="desc">无需任何操作：切网即时、每 10 分钟自动检查，出口变了才真正写入。支持面板的客户端（Surge / Stash / Egern）长这样：</p>
+    <p class="desc">无需任何操作：切网即时、每 10 分钟自动检查，出口变了才真正通知。支持面板的客户端（Surge / Stash）与通知长这样：</p>
     <div class="preview">
       <div class="terminal">
         <div class="bar"><i></i><i></i><i></i></div>
         <pre>po0 加白 1/1 · 出口 203.0.113.0/24
-#1 <span class="g">✅</span> 3/5
-   <span class="g">203.0.113.0/24 ←</span>
+#1 📌0 <span class="g">✅</span> 3/5
+   <span class="g">203.0.113.0/24 📌0 ←</span>
    198.51.100.0/24 📶
    <span class="dim">192.0.2.0/24</span></pre>
       </div>
       <ul class="leglist">
         <li><b>←</b><span>当前出口所在网段</span></li>
+        <li><b>📌0</b><span>固定槽位（常驻白名单，坑满不参与淘汰）</span></li>
         <li><b>📶</b><span>本设备在蜂窝网络下加白的网段</span></li>
         <li><b>3/5</b><span>白名单坑位占用 / 上限</span></li>
         <li><b>✅</b><span>当前出口已在白名单，连接畅通</span></li>
@@ -389,12 +412,12 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
     <h2>常见问题</h2>
     <div class="faq" style="margin-top:26px">
       <details><summary>Wi-Fi 连着没断、公网 IP 变了（家宽重拨），能发现吗？</summary><div class="bd">切网事件抓不到这种静默变更，靠<b>定时兜底</b>：各端 10–15 分钟周期照常上报。且家宽重拨大多在同一 /24 段内，本来就无需重新加白。真正的兜底主力是软路由 —— 它能感知 WAN 重拨事件秒级加白。</div></details>
-      <details><summary>多台 po0 机器怎么配？</summary><div class="bd">每台机器 token 不同，用<b>英文逗号</b>拼起来填一处即可（Shadowrocket / QX 用 <code>|</code>）：<code>pgnfw_机器A,pgnfw_机器B</code>。设备换 IP 后所有机器的白名单同时更新。</div></details>
+      <details><summary>多台 po0 机器怎么配？</summary><div class="bd">每台机器 token 不同，用<b>英文逗号</b>拼起来填一处即可（Shadowrocket 原文编辑时因语法逗号分隔属性，请改用 <code>|</code>）：<code>pgnfw_机器A,pgnfw_机器B</code>。设备换 IP 后所有机器的白名单同时更新。</div></details>
       <details><summary>固定槽位 @N 是什么？什么时候用？</summary><div class="bd">默认坑满按写入时间先进先出淘汰。家宽出口这种全家依赖的网段被挤掉几分钟都难受 —— 在 token 后加 <code>@槽位号</code>（0–4，自己指定）钉死：<code>pgnfw_xxx@0</code>，永不参与淘汰。每个 IP 只占一个槽位，换槽位号前先去面板删旧记录；手机等流动设备别钉，靠自愈就够。推荐：家宽 @0，剩 4 坑留给流动设备。</div></details>
       <details><summary>走代理时会把代理节点 IP 加白吗？</summary><div class="bd">一般不会：请求直连官方 IP <code>124.221.69.228</code>，按域名分流的代理碰不到。iOS 模块已内置直连规则；TUN / 透明代理全局接管的场景加一条 <code>IP-CIDR,124.221.69.228/32,DIRECT,no-resolve</code>。软路由跑脚本时确认路由器自身流量不进代理链（如 OpenClash「绕过本机」）。</div></details>
       <details><summary>白名单 5/5 满了怎么办？</summary><div class="bd">不用管：按写入时间自动淘汰最旧的，被挤出的设备最迟一个周期自动补回。想保住关键网段用固定槽位。</div></details>
-      <details><summary>token 安全吗？</summary><div class="bd">token 即该机器的加白凭证，请勿公开分享。本页填写的 token 只保存在你的浏览器 localStorage，不会上传；仓库与模块不包含任何 token。</div></details>
-      <details><summary>怎么卸载？</summary><div class="bd">OpenWrt：删除 <code>/usr/bin/po0fw</code>、<code>/etc/po0fw.conf</code>、<code>/etc/hotplug.d/iface/99-po0fw</code> 并清理 crontab · Linux：<code>systemctl disable --now po0fw.timer</code> 后删相关文件 · Windows：任务计划程序删「po0fw」· 手机端：删对应模块 / 宏 / 自动化。</div></details>
+      <details><summary>token 安全吗？</summary><div class="bd">token 即该机器的加白凭证，请勿公开分享。本页填写的 token 只保存在你的浏览器 localStorage（可随时点击输入框旁「清空」移除），不会上传；仓库与模块不包含任何 token。</div></details>
+      <details><summary>怎么卸载？</summary><div class="bd">OpenWrt：删除 <code>/usr/bin/po0fw</code>、<code>/etc/po0fw.conf</code>、<code>/etc/hotplug.d/iface/99-po0fw</code> 并清理 crontab · Linux(root)：<code>systemctl disable --now po0fw.timer</code> 后删除 <code>/etc/systemd/system/po0fw.*</code>、<code>/usr/local/bin/po0fw</code>、<code>/etc/po0fw.conf</code> · macOS / 非 root：<code>crontab -e</code> 删对应行并删除 <code>~/.local/bin/po0fw</code> 与 <code>~/.config/po0fw</code> · Windows：管理员 PowerShell 运行 <code>Unregister-ScheduledTask -TaskName po0fw -Confirm:$false; Remove-Item "$env:ProgramData\po0fw" -Recurse -Force</code> · 手机端：删对应模块 / 宏 / 自动化。</div></details>
     </div>
   </div>
 </section>
@@ -408,25 +431,120 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
 <script>
 (function(){
   var RAW="https://raw.githubusercontent.com/w0ven/po0fw/main/";
-  var inp=document.getElementById('tok'),st=document.getElementById('tokState');
+  var API="https://124.221.69.228/api/firewall/";
+  var inp=document.getElementById('tok'),st=document.getElementById('tokState'),clr=document.getElementById('tokClear');
+  var androidPre=document.getElementById('android-urls'),androidHint=document.getElementById('android-multi-hint');
+  var iosBar=document.getElementById('iosTokBar'),btnComma=document.getElementById('copyCommaTok'),btnPipe=document.getElementById('copyPipeTok');
   var PH="pgnfw_你的token";
-  function tok(){var v=inp.value.trim();return /^pgnfw_[A-Za-z0-9]+(@\d)?$/.test(v)?v:null}
-  function refresh(){
-    var t=tok(),show=t||PH;
-    document.querySelectorAll('[data-t]').forEach(function(e){e.textContent=show});
-    if(t){st.textContent="已应用到本页所有命令";st.classList.add('ok');localStorage.setItem('po0fw_token',t)}
-    else{st.textContent=inp.value.trim()?"格式应为 pgnfw_xxx 或 pgnfw_xxx@0":"未填写，命令中显示占位符";st.classList.remove('ok')}
+  var currentComma="",currentPipe="";
+
+  // 初始化所有客户端一键安装链接（确保页面加载即具备合法 href，兼容移动端长按与直接跳转）
+  document.querySelectorAll('[data-scheme]').forEach(function(a){
+    a.href=a.dataset.scheme.replace('{U}',encodeURIComponent(RAW+a.dataset.file));
+  });
+
+  function parseInput(raw){
+    var v=raw.trim();
+    if(!v)return{ok:false,empty:true};
+    var parts=v.split(/[,，|;、\s]+/).filter(Boolean);
+    if(!parts.length)return{ok:false,empty:true};
+    var items=[];
+    for(var i=0;i<parts.length;i++){
+      var p=parts[i];
+      var at=p.indexOf('@');
+      var tok=at===-1?p:p.slice(0,at);
+      var slot=at===-1?null:p.slice(at+1);
+      if(!/^pgnfw_[A-Za-z0-9_-]+$/.test(tok)){
+        return{ok:false,reason:"每个 token 应为 pgnfw_ 开头的字母数字串"};
+      }
+      if(slot!==null&&!/^\d+$/.test(slot)){
+        return{ok:false,reason:"@ 后槽位号须为数字（如 pgnfw_xxx@0）"};
+      }
+      items.push({token:tok,slot:slot,raw:slot!==null?(tok+"@"+slot):tok});
+    }
+    return{ok:true,items:items};
   }
-  var saved=localStorage.getItem('po0fw_token');if(saved){inp.value=saved}
-  inp.addEventListener('input',refresh);refresh();
+
+  function renderAndroidUrls(parsed){
+    androidPre.textContent="";
+    if(!parsed.ok){
+      androidPre.appendChild(document.createTextNode(API));
+      var sp=document.createElement('span');
+      sp.className='tk';
+      sp.textContent=PH;
+      androidPre.appendChild(sp);
+      androidPre.appendChild(document.createTextNode('/add'));
+      androidHint.style.display='none';
+      return;
+    }
+    parsed.items.forEach(function(it,idx){
+      if(idx>0)androidPre.appendChild(document.createTextNode('\n'));
+      androidPre.appendChild(document.createTextNode(API));
+      var sp=document.createElement('span');
+      sp.className='tk';
+      sp.textContent=it.token;
+      androidPre.appendChild(sp);
+      androidPre.appendChild(document.createTextNode('/add'+(it.slot!==null?'?slot='+it.slot:'')));
+    });
+    if(parsed.items.length>1){
+      androidHint.textContent='已生成 '+parsed.items.length+' 台机器的加白地址：在同一个宏里依次添加 '+parsed.items.length+' 个 HTTP POST 动作即可。';
+      androidHint.style.display='block';
+    }else{
+      androidHint.style.display='none';
+    }
+  }
+
+  function refresh(){
+    var p=parseInput(inp.value);
+    clr.style.display=inp.value.trim()?'inline-block':'none';
+    if(p.ok){
+      currentComma=p.items.map(function(x){return x.raw}).join(',');
+      currentPipe=p.items.map(function(x){return x.raw}).join('|');
+      document.querySelectorAll('[data-t]').forEach(function(e){e.textContent=currentComma});
+      renderAndroidUrls(p);
+      st.textContent=p.items.length>1?('已应用（'+p.items.length+' 台机器）'):'已应用到本页所有命令';
+      st.classList.add('ok');
+      st.classList.remove('err');
+      iosBar.classList.add('on');
+      btnPipe.style.display=p.items.length>1?'inline-block':'none';
+      try{localStorage.setItem('po0fw_token',currentComma)}catch(e){}
+    }else{
+      currentComma="";currentPipe="";
+      document.querySelectorAll('[data-t]').forEach(function(e){e.textContent=PH});
+      renderAndroidUrls(p);
+      st.classList.remove('ok');
+      iosBar.classList.remove('on');
+      if(p.empty){
+        st.textContent='未填写，命令中显示占位符';
+        st.classList.remove('err');
+      }else{
+        st.textContent=p.reason||'格式应为 pgnfw_xxx 或 pgnfw_A@0,pgnfw_B';
+        st.classList.add('err');
+      }
+    }
+  }
+
+  try{var saved=localStorage.getItem('po0fw_token');if(saved)inp.value=saved}catch(e){}
+  inp.addEventListener('input',refresh);
+  clr.addEventListener('click',function(){
+    inp.value='';
+    try{localStorage.removeItem('po0fw_token')}catch(e){}
+    refresh();
+    inp.focus();
+  });
+  refresh();
 
   document.querySelectorAll('#tabs button').forEach(function(b){b.addEventListener('click',function(){
-    document.querySelectorAll('#tabs button').forEach(function(x){x.classList.toggle('on',x===b)});
+    document.querySelectorAll('#tabs button').forEach(function(x){
+      var active=(x===b);
+      x.classList.toggle('on',active);
+      x.setAttribute('aria-selected',active?'true':'false');
+    });
     document.querySelectorAll('.pane').forEach(function(p){p.classList.toggle('on',p.id==='pane-'+b.dataset.pane)});
   })});
 
   function copy(text,btn){
-    var done=function(){var old=btn.textContent;btn.textContent="已复制 ✓";btn.classList.add('done');
+    var done=function(){var old=btn.dataset.orig||btn.textContent;btn.dataset.orig=old;btn.textContent="已复制 ✓";btn.classList.add('done');
       setTimeout(function(){btn.textContent=old;btn.classList.remove('done')},1600)};
     if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){fb(text);done()})}
     else{fb(text);done()}
@@ -435,12 +553,11 @@ powershell -ExecutionPolicy Bypass -File i.ps1 -Tokens "<span class="tk" data-t>
   document.querySelectorAll('.cb .cp').forEach(function(b){b.addEventListener('click',function(){
     copy(b.parentElement.querySelector('pre').innerText,b);
   })});
-  document.querySelectorAll('[data-scheme]').forEach(function(a){a.addEventListener('click',function(){
-    a.href=a.dataset.scheme.replace('{U}',encodeURIComponent(RAW+a.dataset.file));
-  })});
   document.querySelectorAll('.bc[data-file]').forEach(function(b){b.addEventListener('click',function(){
     copy(RAW+b.dataset.file,b);
   })});
+  btnComma.addEventListener('click',function(){if(currentComma)copy(currentComma,btnComma)});
+  btnPipe.addEventListener('click',function(){if(currentPipe)copy(currentPipe,btnPipe)});
 })();
 </script>
 </body>

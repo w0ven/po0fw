@@ -1,24 +1,46 @@
-name: Linux and macOS shell
+name: Shell, Client JS, and Docs
 
 on:
   push:
     paths:
       - "po0fw.sh"
       - "install-linux.sh"
-      - "tests/test-po0fw.sh"
+      - "openwrt/**"
+      - "scripts/**"
+      - "egern/**"
+      - "surge/**"
+      - "loon/**"
+      - "stash/**"
+      - "shadowrocket/**"
+      - "quantumultx/**"
+      - "docs/**"
+      - "windows/**"
+      - "tests/**"
+      - "LICENSE"
       - ".github/workflows/shell.yml"
   pull_request:
     paths:
       - "po0fw.sh"
       - "install-linux.sh"
-      - "tests/test-po0fw.sh"
+      - "openwrt/**"
+      - "scripts/**"
+      - "egern/**"
+      - "surge/**"
+      - "loon/**"
+      - "stash/**"
+      - "shadowrocket/**"
+      - "quantumultx/**"
+      - "docs/**"
+      - "windows/**"
+      - "tests/**"
+      - "LICENSE"
       - ".github/workflows/shell.yml"
 
 permissions:
   contents: read
 
 jobs:
-  shell:
+  shell-and-js:
     strategy:
       fail-fast: false
       matrix:
@@ -28,7 +50,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Run through the platform /bin/sh
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Check POSIX shell syntax and run shell test suite
         run: |
-          /bin/sh --version 2>/dev/null || true
+          /bin/sh -n po0fw.sh install-linux.sh openwrt/install-openwrt.sh tests/test-po0fw.sh
           /bin/sh tests/test-po0fw.sh
+      - name: Run client JS, HTML UI, and repo integrity tests
+        run: |
+          node tests/test-js-clients.mjs

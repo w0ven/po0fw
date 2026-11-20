@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Parse and install with Windows PowerShell 5.1
+      - name: Parse, install, and test with Windows PowerShell 5.1
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
@@ -52,7 +52,7 @@ jobs:
           }
 
           try {
-              & .\windows\install-windows.ps1 -Tokens "pgnfw_ci_dummy" -SkipInitialRun
+              & .\windows\install-windows.ps1 -Tokens "pgnfw_ci_dummy@0" -SkipInitialRun
 
               $task = Get-ScheduledTask -TaskName "po0fw" -ErrorAction Stop
               if (-not $task.Actions -or $task.Actions[0].Execute -ne "wscript.exe") {
@@ -75,6 +75,48 @@ jobs:
               ) | Out-Null
               if ($errors.Count -gt 0) {
                   throw "Installed worker has parser errors: $($errors.Message -join '; ')"
+              }
+
+              # End-to-end test installed worker against a local loopback mock HTTP server
+              $tcpProbe = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+              $tcpProbe.Start()
+              $port = ([System.Net.IPEndPoint]$tcpProbe.LocalEndpoint).Port
+              $tcpProbe.Stop()
+
+              $listener = New-Object System.Net.HttpListener
+              $listener.Prefixes.Add("http://127.0.0.1:$port/")
+              $listener.Start()
+              $serverJob = $null
+              try {
+                  $serverJob = [PowerShell]::Create().AddScript({
+                      param($l)
+                      try {
+                          while ($l.IsListening) {
+                              $ctx = $l.GetContext()
+                              $body = '{"enabled":true,"currentIp":"203.0.113.0/24","limit":5,"whitelist":[{"ip":"203.0.113.0/24","slot":0}]}'
+                              $buf = [System.Text.Encoding]::UTF8.GetBytes($body)
+                              $ctx.Response.StatusCode = 200
+                              $ctx.Response.ContentType = "application/json"
+                              $ctx.Response.OutputStream.Write($buf, 0, $buf.Length)
+                              $ctx.Response.Close()
+                          }
+                      } catch {}
+                  }).AddArgument($listener)
+                  $null = $serverJob.BeginInvoke()
+
+                  $addOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installed -ApiBase "http://127.0.0.1:$port/api/firewall" | Out-String
+                  if ($LASTEXITCODE -ne 0 -or $addOut -notmatch '203\.0\.113\.0/24') {
+                      throw "Worker add test failed: $addOut"
+                  }
+
+                  $stOut = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installed -Status -ApiBase "http://127.0.0.1:$port/api/firewall" | Out-String
+                  if ($LASTEXITCODE -ne 0 -or $stOut -notmatch '1/5') {
+                      throw "Worker status test failed: $stOut"
+                  }
+              } finally {
+                  $listener.Stop()
+                  $listener.Close()
+                  if ($serverJob) { $serverJob.Dispose() }
               }
           } finally {
               Unregister-ScheduledTask -TaskName "po0fw" -Confirm:$false -ErrorAction SilentlyContinue

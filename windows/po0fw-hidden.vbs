@@ -4,7 +4,7 @@
 ' launch the PowerShell worker without a visible window.
 Option Explicit
 
-Dim shell, fso, scriptDir, ps1, args, i, cmd
+Dim shell, fso, scriptDir, ps1, args, arg, i, cmd
 
 Set shell = CreateObject("WScript.Shell")
 Set fso = CreateObject("Scripting.FileSystemObject")
@@ -12,10 +12,15 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 ps1 = fso.BuildPath(scriptDir, "po0fw.ps1")
 
-' Forward script arguments such as -Status.
+' Forward script arguments such as -Status or -Tokens "pgnfw_a,pgnfw_b".
 args = ""
 For i = 0 To WScript.Arguments.Count - 1
-    args = args & " " & WScript.Arguments(i)
+    arg = WScript.Arguments(i)
+    If InStr(arg, " ") > 0 Or InStr(arg, ",") > 0 Or InStr(arg, ";") > 0 Then
+        args = args & " """ & Replace(arg, """", "\""") & """"
+    Else
+        args = args & " " & arg
+    End If
 Next
 
 cmd = "powershell.exe -NoProfile -NonInteractive -WindowStyle Hidden " & _

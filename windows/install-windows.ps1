@@ -10,6 +10,27 @@ param(
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072
 
+function Normalize-Po0fwTokens {
+    param([Parameter(Mandatory = $true)][string]$RawTokens)
+
+    $parts = $RawTokens -split '[,，|;、\s]+' | Where-Object { $_ -ne "" }
+    if (-not $parts -or $parts.Count -eq 0) {
+        throw "Token cannot be empty."
+    }
+
+    $normalized = New-Object System.Collections.Generic.List[string]
+    foreach ($p in $parts) {
+        $item = $p.Trim()
+        if ($item -notmatch '^pgnfw_[A-Za-z0-9_-]+(@\d+)?$') {
+            throw "Invalid token format: '$item' (expected pgnfw_xxx or pgnfw_xxx@0; check if placeholder was left unedited)."
+        }
+        $normalized.Add($item)
+    }
+    return ($normalized -join ",")
+}
+
+$cleanTokens = Normalize-Po0fwTokens -RawTokens $Tokens
+
 $dir = Join-Path $env:ProgramData "po0fw"
 $mainScript = Join-Path $dir "po0fw.ps1"
 $launcherScript = Join-Path $dir "po0fw-hidden.vbs"
@@ -22,15 +43,21 @@ function Install-Po0fwFile {
     )
 
     $local = Join-Path $PSScriptRoot $Name
-    if (Test-Path $local) {
+    if (Test-Path -LiteralPath $local) {
         Copy-Item -LiteralPath $local -Destination $Destination -Force
         return
     }
 
     $download = "$Destination.download"
     try {
-        Invoke-WebRequest -UseBasicParsing -Uri "$RawBase/windows/$Name" -OutFile $download
-        if (-not (Test-Path $download) -or (Get-Item $download).Length -eq 0) {
+        $webParams = @{
+            UseBasicParsing = $true
+            Uri = "$RawBase/windows/$Name"
+            OutFile = $download
+            TimeoutSec = 30
+        }
+        Invoke-WebRequest @webParams
+        if (-not (Test-Path -LiteralPath $download) -or (Get-Item -LiteralPath $download).Length -eq 0) {
             throw "Downloaded file is empty: $Name"
         }
         Move-Item -LiteralPath $download -Destination $Destination -Force
@@ -77,7 +104,7 @@ ConvertTo-Utf8Bom -Path $mainScript
 Assert-PowerShellSyntax -Path $mainScript
 
 Write-Host "[2/3] Writing configuration"
-Set-Content -LiteralPath (Join-Path $dir "po0fw.conf") -Value $Tokens -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $dir "po0fw.conf") -Value $cleanTokens -Encoding UTF8
 
 Write-Host "[3/3] Registering the silent scheduled task (10 minutes + network change)"
 # Use splatting instead of PowerShell backtick continuations. A backtick stops
@@ -99,6 +126,7 @@ $timerTrigger = New-ScheduledTaskTrigger @triggerParameters
 $eventClass = Get-CimClass -ClassName MSFT_TaskEventTrigger -Namespace Root/Microsoft/Windows/TaskScheduler
 $networkTrigger = New-CimInstance -CimClass $eventClass -ClientOnly
 $networkTrigger.Subscription = '<QueryList><Query Id="0" Path="Microsoft-Windows-NetworkProfile/Operational"><Select Path="Microsoft-Windows-NetworkProfile/Operational">*[System[(EventID=10000)]]</Select></Query></QueryList>'
+$networkTrigger.Delay = "PT3S"
 $networkTrigger.Enabled = $true
 
 $settingsParameters = @{
@@ -106,6 +134,7 @@ $settingsParameters = @{
     DontStopIfGoingOnBatteries = $true
     StartWhenAvailable = $true
     ExecutionTimeLimit = New-TimeSpan -Minutes 5
+    MultipleInstances = "IgnoreNew"
     Hidden = $true
 }
 $settings = New-ScheduledTaskSettingsSet @settingsParameters
