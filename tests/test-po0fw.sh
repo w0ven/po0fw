@@ -210,6 +210,9 @@ chmod +x "$TEST_TMP/nonroot-bin/id" "$TEST_TMP/nonroot-bin/crontab" "$TEST_TMP/n
 
 reset_state
 HOME="$FAKE_HOME" \
+  XDG_CONFIG_HOME="" \
+  XDG_BIN_HOME="" \
+  TERMUX_VERSION="" \
   TMPDIR="$TEST_TMP" \
   PATH="$TEST_TMP/nonroot-bin:$PATH" \
   PO0FW_TEST_STATE="$TEST_TMP/state" \
