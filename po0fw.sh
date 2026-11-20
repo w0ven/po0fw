@@ -6,6 +6,7 @@
 #   PO0FW_TOKENS="pgnfw_xxx" ./po0fw.sh          # 环境变量方式
 #   ./po0fw.sh pgnfw_xxx,pgnfw_yyy@0             # 参数方式（多 token 逗号/| 分割, @N 固定槽位）
 #   ./po0fw.sh status [pgnfw_xxx]                # 只看状态不加白
+#   ./po0fw.sh uninstall                         # 卸载定时任务、配置与已安装脚本
 #   ./po0fw.sh --help                            # 查看帮助
 #
 # 配置文件（可选，优先级低于环境变量/参数）:
@@ -33,6 +34,7 @@ usage() {
   po0fw                             读取配置并执行加白
   po0fw <tokens>                    使用指定 token 加白（多个用 , 或 | 分隔，可带 @槽位）
   po0fw status [tokens]             只读查询白名单状态（不触发写入或淘汰）
+  po0fw uninstall                   卸载定时任务、hotplug、配置文件与已安装的 po0fw
   po0fw -h | --help                 显示此帮助信息
 
 示例:
@@ -41,7 +43,83 @@ usage() {
 EOF
 }
 
-log() { printf '[po0fw] %s\n' "$*"; }
+log() {
+  ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || true)
+  if [ -n "$ts" ]; then
+    printf '[po0fw %s] %s\n' "$ts" "$*"
+  else
+    printf '[po0fw] %s\n' "$*"
+  fi
+}
+
+run_uninstall() {
+  is_root=0
+  [ "$(id -u 2>/dev/null || printf 1)" = "0" ] && is_root=1
+
+  if [ "$is_root" = "1" ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+    if [ -f /etc/systemd/system/po0fw.timer ] || [ -f /etc/systemd/system/po0fw.service ]; then
+      systemctl disable --now po0fw.timer >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/po0fw.timer /etc/systemd/system/po0fw.service
+      systemctl daemon-reload >/dev/null 2>&1 || true
+      log "已移除 systemd 定时任务 (po0fw.timer)"
+    fi
+  fi
+
+  if [ "$is_root" = "1" ] && [ -f /etc/crontabs/root ]; then
+    if grep -q 'po0fw' /etc/crontabs/root 2>/dev/null; then
+      sed -i '\#po0fw#d' /etc/crontabs/root
+      /etc/init.d/cron restart >/dev/null 2>&1 || true
+      log "已清理 OpenWrt crontab 条目"
+    fi
+  fi
+
+  if command -v crontab >/dev/null 2>&1; then
+    if crontab -l 2>/dev/null | grep -q 'po0fw'; then
+      ( crontab -l 2>/dev/null | grep -v 'po0fw' || true ) | crontab -
+      log "已清理当前用户 crontab 条目"
+    fi
+  fi
+
+  if [ "$is_root" = "1" ] && [ -f /etc/hotplug.d/iface/99-po0fw ]; then
+    rm -f /etc/hotplug.d/iface/99-po0fw
+    log "已移除 OpenWrt hotplug 触发器 (/etc/hotplug.d/iface/99-po0fw)"
+  fi
+
+  user_conf="${XDG_CONFIG_HOME:-${HOME:-}/.config}/po0fw/po0fw.conf"
+  for cf in "$EXPLICIT_CONF" "$user_conf" "${PREFIX:-/data/data/com.termux/files/usr}/etc/po0fw.conf"; do
+    if [ -n "$cf" ] && [ -f "$cf" ]; then
+      rm -f "$cf"
+      rmdir "$(dirname "$cf")" 2>/dev/null || true
+      log "已删除配置文件 $cf"
+    fi
+  done
+  if [ "$is_root" = "1" ] && [ -f /etc/po0fw.conf ]; then
+    rm -f /etc/po0fw.conf
+    log "已删除配置文件 /etc/po0fw.conf"
+  fi
+
+  # 仅删除安装在标准 bin 目录下的可执行副本，绝不误删源码仓库中的 po0fw.sh
+  for bp in \
+    "${XDG_BIN_HOME:-${HOME:-}/.local/bin}/po0fw" \
+    "${PREFIX:-/data/data/com.termux/files/usr}/bin/po0fw"; do
+    if [ -n "$bp" ] && [ -f "$bp" ]; then
+      rm -f "$bp"
+      log "已删除主程序 $bp"
+    fi
+  done
+  if [ "$is_root" = "1" ]; then
+    for sbp in /usr/local/bin/po0fw /usr/bin/po0fw; do
+      if [ -f "$sbp" ]; then
+        rm -f "$sbp"
+        log "已删除主程序 $sbp"
+      fi
+    done
+    rm -f /tmp/po0fw.log 2>/dev/null || true
+  fi
+
+  log "✅ po0fw 已完成卸载"
+  exit 0
+}
 
 MODE="add"
 ARG_TOKENS=""
@@ -49,6 +127,9 @@ case "${1:-}" in
   -h|--help|help)
     usage
     exit 0
+    ;;
+  uninstall|remove)
+    run_uninstall
     ;;
   -*)
     printf 'po0fw: 未知选项: %s\n' "$1" >&2
@@ -85,7 +166,6 @@ parse_conf_file() {
   [ -f "$conf_file" ] && [ -r "$conf_file" ] || return 1
   while IFS= read -r raw_line || [ -n "$raw_line" ]; do
     line=$(printf '%s' "$raw_line" | tr -d '\r')
-    # 去首尾空白
     line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
     case "$line" in
       ""|\#*) continue ;;
@@ -168,7 +248,6 @@ if [ "$MODE" = "add" ]; then
     old_pid=""
     [ -f "$candidate_lock/pid" ] && old_pid=$(cat "$candidate_lock/pid" 2>/dev/null || true)
     if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
-      # 短暂等待前序实例自然结束；若仍在运行则礼貌跳过本次重复触发
       waited=0
       while [ "$waited" -lt 3 ] && [ -d "$candidate_lock" ] && kill -0 "$old_pid" 2>/dev/null; do
         sleep 1
@@ -244,7 +323,6 @@ same_c24() {
   b_base=${b%/24}
   a_p3=${a_base%.*}
   b_p3=${b_base%.*}
-  # 确保确实是 4 段点分 IPv4
   case "$a_base" in
     [0-9]*.[0-9]*.[0-9]*.[0-9]*) ;;
     *) return 1 ;;
@@ -266,7 +344,6 @@ is_retryable_response() {
     ""|000|5[0-9][0-9]|429) return 0 ;;
     2[0-9][0-9]|403) return 1 ;;
   esac
-  # 其他 4xx：若返回规范 JSON 错误（如 {"code":400,...}）属确定性错误不重试；裸文本（如 "Error"）则重试
   trimmed=$(printf '%s' "$body" | tr -d '\r\n' | sed 's/^[[:space:]]*//')
   case "$trimmed" in
     \{*) return 1 ;;
@@ -277,6 +354,7 @@ is_retryable_response() {
 HTTP_BODY=""
 HTTP_CODE=""
 HTTP_ERR=""
+HTTP_RETRIES_EXHAUSTED=0
 http_request() {
   method="$1"
   url="$2"
@@ -285,6 +363,7 @@ http_request() {
     HTTP_BODY=""
     HTTP_CODE=""
     HTTP_ERR=""
+    HTTP_RETRIES_EXHAUSTED=0
     if [ "$method" = "POST" ]; then
       # shellcheck disable=SC2086
       raw=$(curl $CURL_BASE_OPTS -X POST -w '\n__HTTP_STATUS__:%{http_code}' "$url" 2>&1)
@@ -300,7 +379,6 @@ http_request() {
         HTTP_CODE=${raw##*__HTTP_STATUS__:}
         HTTP_CODE=$(printf '%s' "$HTTP_CODE" | tr -d '\r\n ')
         HTTP_BODY=${raw%__HTTP_STATUS__:*}
-        # 去掉 -w 注入的前导换行
         HTTP_BODY=$(printf '%s' "$HTTP_BODY" | sed '$s/\r$//')
         ;;
       *)
@@ -322,6 +400,7 @@ http_request() {
     fi
 
     if [ "$attempt" -ge "$HTTP_RETRY" ]; then
+      HTTP_RETRIES_EXHAUSTED=1
       if [ "$rc" -ne 0 ]; then
         HTTP_ERR="${HTTP_BODY}（已重试 ${HTTP_RETRY} 次）"
       fi
@@ -338,7 +417,6 @@ NORMALIZED_TOKENS=$(printf '%s' "$TOKENS" | sed 's/，/ /g; s/、/ /g' | tr ',|;
 
 FAIL=0
 IDX=0
-VALID_COUNT=0
 for entry in $NORMALIZED_TOKENS; do
   [ -z "$entry" ] && continue
   IDX=$((IDX + 1))
@@ -373,6 +451,8 @@ for entry in $NORMALIZED_TOKENS; do
         continue
         ;;
     esac
+    # 消除多余前导零（如 00 -> 0）
+    slot=$(printf '%s' "$slot" | sed 's/^0*\([0-9]\)/\1/')
   else
     case "$entry" in
       *@)
@@ -383,14 +463,14 @@ for entry in $NORMALIZED_TOKENS; do
     esac
   fi
 
-  VALID_COUNT=$((VALID_COUNT + 1))
-
   if [ "$MODE" = "status" ]; then
     # 只读端点：GET <base>/<token>（不带 /add）。
     # 切勿改回 POST .../add —— 当前 IP 不在白名单时，add 会真的写入并
     # 占掉一个 FIFO 坑位、顶掉最旧记录，status 必须只看不改。
     http_request "GET" "$API_BASE/$tok"
     norm=$(normalize_json "$HTTP_BODY")
+    retry_note=""
+    [ "$HTTP_RETRIES_EXHAUSTED" = "1" ] && retry_note="（已重试 ${HTTP_RETRY} 次）"
 
     if [ -n "$HTTP_ERR" ]; then
       log "#$IDX ${short}… ❌ 查询失败: $HTTP_ERR"
@@ -399,12 +479,13 @@ for entry in $NORMALIZED_TOKENS; do
     fi
     if [ "$HTTP_CODE" -ge 400 ] 2>/dev/null; then
       err_msg=$(json_error_message "$norm")
-      log "#$IDX ${short}… ❌ 查询失败 (HTTP $HTTP_CODE): ${err_msg:-$norm}"
+      detail="${err_msg:-${norm:-无响应体}}"
+      log "#$IDX ${short}… ❌ 查询失败 (HTTP $HTTP_CODE): ${detail}${retry_note}"
       FAIL=1
       continue
     fi
     if ! printf '%s\n' "$norm" | grep -q '"whitelist"'; then
-      log "#$IDX ${short}… ❌ 查询失败: $norm"
+      log "#$IDX ${short}… ❌ 查询失败: ${norm:-无响应体}${retry_note}"
       FAIL=1
       continue
     fi
@@ -459,6 +540,8 @@ for entry in $NORMALIZED_TOKENS; do
   [ -n "$slot" ] && url="$url?slot=$slot"
   http_request "POST" "$url"
   norm=$(normalize_json "$HTTP_BODY")
+  retry_note=""
+  [ "$HTTP_RETRIES_EXHAUSTED" = "1" ] && retry_note="（已重试 ${HTTP_RETRY} 次）"
 
   if [ -n "$HTTP_ERR" ]; then
     log "#$IDX ${short}… ❌ 请求失败: $HTTP_ERR"
@@ -472,12 +555,13 @@ for entry in $NORMALIZED_TOKENS; do
   fi
   if [ "$HTTP_CODE" -ge 400 ] 2>/dev/null; then
     err_msg=$(json_error_message "$norm")
-    log "#$IDX ${short}… ❌ 请求失败 (HTTP $HTTP_CODE): ${err_msg:-$norm}"
+    detail="${err_msg:-${norm:-无响应体}}"
+    log "#$IDX ${short}… ❌ 请求失败 (HTTP $HTTP_CODE): ${detail}${retry_note}"
     FAIL=1
     continue
   fi
   if ! printf '%s\n' "$norm" | grep -q '"whitelist"'; then
-    log "#$IDX ${short}… ❌ 请求失败: $norm"
+    log "#$IDX ${short}… ❌ 请求失败: ${norm:-无响应体}${retry_note}"
     FAIL=1
     continue
   fi
@@ -490,14 +574,17 @@ for entry in $NORMALIZED_TOKENS; do
   cur=$(json_current_ip "$norm")
   entries=$(json_whitelist_entries "$norm")
   matched=0
+  matched_slot="null"
   OLDIFS=$IFS
   IFS='
 '
   for line in $entries; do
     IFS=$OLDIFS
     ip=${line%% *}
+    slotv=${line##* }
     if [ -n "$cur" ] && same_c24 "$ip" "$cur"; then
       matched=1
+      matched_slot="$slotv"
       break
     fi
     IFS='
@@ -506,7 +593,14 @@ for entry in $NORMALIZED_TOKENS; do
   IFS=$OLDIFS
 
   if [ "$matched" = "1" ]; then
-    log "#$IDX ${short}… ✅ 出口 $cur 已在白名单${slot:+ (槽位 $slot)}"
+    if [ -n "$slot" ] && [ "$matched_slot" != "$slot" ]; then
+      log "#$IDX ${short}… ⚠️  出口 $cur 已在白名单，但固定槽位 @$slot 未生效 (实际=${matched_slot})"
+      FAIL=1
+    elif [ "$matched_slot" != "null" ] && [ -n "$matched_slot" ]; then
+      log "#$IDX ${short}… ✅ 出口 $cur 已在白名单 (槽位 $matched_slot)"
+    else
+      log "#$IDX ${short}… ✅ 出口 $cur 已在白名单"
+    fi
   else
     log "#$IDX ${short}… ❌ 加白未生效 (currentIp=${cur:-未知}): $norm"
     FAIL=1

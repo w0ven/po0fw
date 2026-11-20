@@ -140,10 +140,12 @@ async function apiCall(ctx, token, slot) {
     url += "?slot=" + encodeURIComponent(slot);
   }
   let r = null;
+  let exhausted = false;
   for (let attempt = 1; attempt <= HTTP_RETRY; attempt++) {
     r = await httpPostOnce(ctx, url);
     if (!r.netError && !isRetryableServerError(r.status, r.text)) break;
     if (attempt < HTTP_RETRY) await sleep(HTTP_RETRY_DELAY_MS * attempt);
+    else exhausted = true;
   }
   if (r.netError) return { error: r.netError + "（已重试 " + HTTP_RETRY + " 次）" };
   const status = r.status;
@@ -169,7 +171,8 @@ async function apiCall(ctx, token, slot) {
       (data && (data.message || data.error)) ||
       String(text || "").trim().slice(0, 80) ||
       "请求被拒绝";
-    return { error: "HTTP " + errStatus + ": " + msg };
+    const retrySuffix = exhausted ? "（已重试 " + HTTP_RETRY + " 次）" : "";
+    return { error: "HTTP " + errStatus + ": " + msg + retrySuffix };
   }
   if (!data || typeof data !== "object") {
     return { error: "响应异常: " + String(text).slice(0, 80) };

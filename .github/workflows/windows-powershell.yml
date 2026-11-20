@@ -113,6 +113,11 @@ jobs:
                   if ($LASTEXITCODE -ne 0 -or $stOut -notmatch '1/5') {
                       throw "Worker status test failed: $stOut"
                   }
+
+                  & .\windows\install-windows.ps1 -Uninstall
+                  if (Test-Path -LiteralPath (Join-Path $env:ProgramData "po0fw")) {
+                      throw "Uninstall did not remove ProgramData\po0fw"
+                  }
               } finally {
                   $listener.Stop()
                   $listener.Close()

@@ -364,7 +364,9 @@ function runSharedClient({
   const els = {
     tok: makeEl(""),
     tokState: makeEl(""),
+    tokStateText: makeEl(""),
     tokClear: makeEl(""),
+    tokDemo: makeEl("填入示例"),
     "android-urls": makeEl(""),
     "android-multi-hint": makeEl(""),
     iosTokBar: makeEl(""),
@@ -394,6 +396,9 @@ function runSharedClient({
     navigator: {},
     setTimeout: () => {},
     encodeURIComponent,
+    parseInt,
+    String,
+    Boolean,
     document: {
       getElementById: (id) => els[id],
       createTextNode: (t) => ({ textContent: t }),
@@ -410,8 +415,13 @@ function runSharedClient({
   // 页面初始化后一键安装按钮必须立即拥有 href
   assert.match(schemeLink.href, /^surge:\/\/\/install-module\?url=https%3A%2F%2F/);
 
-  // 输入多 token + 固定槽位，验证命令占位与安卓 URL 转换正确
-  els.tok.value = "pgnfw_homeA@0 | pgnfw_officeB";
+  // 点击「填入示例」不写入 localStorage，但同步更新所有命令与安卓 URL
+  els.tokDemo.listeners.click();
+  assert.equal(domSandbox.localStorage.getItem("po0fw_token"), null);
+  assert.match(cmdSpans[0].textContent, /^pgnfw_homeRouter@0,pgnfw_mobileNode$/);
+
+  // 输入多 token + 固定槽位（含前导零 @00），验证命令占位与安卓 URL 转换正确
+  els.tok.value = "pgnfw_homeA@00 | pgnfw_officeB";
   els.tok.listeners.input();
   assert.equal(cmdSpans[0].textContent, "pgnfw_homeA@0,pgnfw_officeB");
   assert.equal(
@@ -420,6 +430,28 @@ function runSharedClient({
   );
   assert.equal(els["android-multi-hint"].style.display, "block");
   assert.ok(els.tokState.classList.set.has("ok"));
+
+  // 验证 po0-debug.js 在 Loon 下使用毫秒级 10000ms timeout（而非 10ms）
+  const debugCode = fs.readFileSync(path.join(ROOT, "scripts/po0-debug.js"), "utf8");
+  let debugProbeTimeout = null;
+  await new Promise((resolve) => {
+    vm.runInNewContext(debugCode, {
+      Date,
+      JSON,
+      String,
+      $loon: "3.2.0",
+      $argument: "tokens=debug",
+      $notification: { post() {} },
+      $httpClient: {
+        post(opts, cb) {
+          debugProbeTimeout = opts.timeout;
+          cb(null, { status: 400 }, "{}");
+        },
+      },
+      $done: resolve,
+    });
+  });
+  assert.equal(debugProbeTimeout, 10000);
 
   // 检查所有静态约束：图标存在、PowerShell UTF-8 BOM、VBS 纯 ASCII、LICENSE 存在
   assert.ok(fs.existsSync(path.join(ROOT, "LICENSE")), "LICENSE must exist");

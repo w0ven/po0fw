@@ -190,9 +190,9 @@ conf_out=$(PO0FW_CONF_OVERRIDE="$SAFE_CONF" run_po0fw)
 printf '%s\n' "$conf_out" | grep -F '#1 pgnfw_one… ✅' >/dev/null
 printf '%s\n' "$conf_out" | grep -F '#2 pgnfw_two… ✅' >/dev/null
 
-# 8. 非 root 用户运行 install-linux.sh 端到端验证
+# 8. 非 root 用户运行 install-linux.sh + po0fw uninstall 端到端验证
 FAKE_HOME="$TEST_TMP/nonroot-home"
-mkdir -p "$FAKE_HOME" "$TEST_TMP/nonroot-bin"
+mkdir -p "$FAKE_HOME" "$TEST_TMP/nonroot-bin" "$TEST_TMP/stale-cwd"
 cat > "$TEST_TMP/nonroot-bin/id" <<'EOF'
 #!/bin/sh
 printf '1000\n'
@@ -216,12 +216,71 @@ HOME="$FAKE_HOME" \
   TMPDIR="$TEST_TMP" \
   PATH="$TEST_TMP/nonroot-bin:$PATH" \
   PO0FW_TEST_STATE="$TEST_TMP/state" \
-  PO0FW_TOKENS="pgnfw_macos_user@0" \
+  PO0FW_TOKENS="pgnfw_macos_user@00" \
   /bin/sh "$ROOT/install-linux.sh" >/dev/null
 
 [ -x "$FAKE_HOME/.local/bin/po0fw" ]
 [ -f "$FAKE_HOME/.config/po0fw/po0fw.conf" ]
-grep -F 'PO0FW_TOKENS="pgnfw_macos_user@0"' "$FAKE_HOME/.config/po0fw/po0fw.conf" >/dev/null
+grep -F 'PO0FW_TOKENS="pgnfw_macos_user@00"' "$FAKE_HOME/.config/po0fw/po0fw.conf" >/dev/null
 grep -F "$FAKE_HOME/.local/bin/po0fw" "$TEST_TMP/crontab.txt" >/dev/null
+# 验证 @00 前导零已规范化为 ?slot=0
+grep -F 'POST https://124.221.69.228/api/firewall/pgnfw_macos_user/add?slot=0' "$TEST_TMP/state/requests.log" >/dev/null
+
+# 验证 po0fw uninstall 能干净移除配置、crontab 条目与已安装副本，同时保留源码仓库内的 po0fw.sh
+HOME="$FAKE_HOME" \
+  XDG_CONFIG_HOME="" \
+  XDG_BIN_HOME="" \
+  TERMUX_VERSION="" \
+  PATH="$TEST_TMP/nonroot-bin:$PATH" \
+  /bin/sh "$FAKE_HOME/.local/bin/po0fw" uninstall >/dev/null
+
+[ ! -e "$FAKE_HOME/.local/bin/po0fw" ]
+[ ! -e "$FAKE_HOME/.config/po0fw/po0fw.conf" ]
+[ -f "$ROOT/po0fw.sh" ]
+if grep -q 'po0fw' "$TEST_TMP/crontab.txt" 2>/dev/null; then
+  echo "FAIL: crontab entry should be removed after uninstall" >&2
+  exit 1
+fi
+
+# 9. 验证 `curl ... | sh` 管道模式下不会误拷当前工作目录中的同名旧 po0fw.sh
+cat > "$TEST_TMP/stale-cwd/po0fw.sh" <<'EOF'
+#!/bin/sh
+echo "STALE_POISON_SCRIPT" >&2
+exit 99
+EOF
+chmod +x "$TEST_TMP/stale-cwd/po0fw.sh"
+cat > "$TEST_TMP/nonroot-bin/curl" <<EOF
+#!/bin/sh
+prev=""
+out=""
+for a in "\$@"; do
+  if [ "\$prev" = "-o" ]; then out="\$a"; prev=""; continue; fi
+  case "\$a" in -o) prev="-o" ;; esac
+done
+if [ -n "\$out" ]; then
+  cp "$ROOT/po0fw.sh" "\$out"
+  exit 0
+fi
+exec "$TEST_TMP/bin/curl" "\$@"
+EOF
+chmod +x "$TEST_TMP/nonroot-bin/curl"
+
+reset_state
+(
+  cd "$TEST_TMP/stale-cwd"
+  HOME="$FAKE_HOME" \
+    XDG_CONFIG_HOME="" \
+    XDG_BIN_HOME="" \
+    TERMUX_VERSION="" \
+    TMPDIR="$TEST_TMP" \
+    PATH="$TEST_TMP/nonroot-bin:$PATH" \
+    PO0FW_TEST_STATE="$TEST_TMP/state" \
+    PO0FW_TOKENS="pgnfw_pipe_install@0" \
+    /bin/sh < "$ROOT/install-linux.sh" >/dev/null
+)
+if grep -q 'STALE_POISON_SCRIPT' "$FAKE_HOME/.local/bin/po0fw"; then
+  echo "FAIL: piped installer copied stale ./po0fw.sh from working directory" >&2
+  exit 1
+fi
 
 echo 'po0fw all shell tests passed'

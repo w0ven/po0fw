@@ -7,6 +7,12 @@ param(
     [switch]$Status
 )
 
+function Write-Po0fwLog {
+    param([Parameter(Mandatory = $true)][string]$Message)
+    $ts = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    Write-Host "[po0fw $ts] $Message"
+}
+
 function Read-Po0fwConfTokens {
     param([Parameter(Mandatory = $true)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { return "" }
@@ -98,7 +104,6 @@ function Invoke-Po0fwApi {
         } elseif ($statusCode -ge 500 -or $statusCode -eq 429 -or $statusCode -eq 0) {
             $retryable = $true
         } elseif (($statusCode -lt 200 -or $statusCode -ge 300) -and $statusCode -ne 403 -and $null -eq $parsed) {
-            # po0 API 偶发裸 400（body 仅 "Error"），属服务端瞬时抖动，安全重试
             $retryable = $true
         }
 
@@ -108,6 +113,7 @@ function Invoke-Po0fwApi {
                 Body = $bodyText
                 Data = $parsed
                 NetError = $null
+                RetriesExhausted = $false
             }
         }
 
@@ -118,6 +124,7 @@ function Invoke-Po0fwApi {
                 Body = $bodyText
                 Data = $parsed
                 NetError = $errMsg
+                RetriesExhausted = $true
             }
         }
 
@@ -166,20 +173,21 @@ foreach ($rawEntry in $rawEntries) {
     $short = $tok.Substring(0, [Math]::Min(12, $tok.Length))
 
     if ($tok -notmatch '^pgnfw_[A-Za-z0-9_-]+$') {
-        Write-Host "[po0fw] #$idx $short… ❌ 无效 token 格式（应为 pgnfw_xxx）"
+        Write-Po0fwLog "#$idx $short… ❌ 无效 token 格式（应为 pgnfw_xxx）"
         $fail = $true
         continue
     }
-    if ($hasAt -and ($slot -notmatch '^\d+$')) {
-        Write-Host "[po0fw] #$idx $short… ❌ 无效槽位号 '@$slot'（须为非负整数，如 @0）"
-        $fail = $true
-        continue
+    if ($hasAt) {
+        if ($slot -notmatch '^\d+$') {
+            Write-Po0fwLog "#$idx $short… ❌ 无效槽位号 '@$slot'（须为非负整数，如 @0）"
+            $fail = $true
+            continue
+        }
+        $slot = [string]([int]$slot)
     }
 
     if ($Status) {
         # 只读端点：GET <base>/<token>（不带 /add）。
-        # 切勿改回 POST .../add —— 当前 IP 不在白名单时，add 会真的写入并
-        # 占掉一个 FIFO 坑位、顶掉最旧记录，status 必须只看不改。
         $r = Invoke-Po0fwApi -Method "GET" -Uri "$ApiBase/$tok"
     } else {
         $url = "$ApiBase/$tok/add"
@@ -188,13 +196,15 @@ foreach ($rawEntry in $rawEntries) {
     }
 
     $verb = if ($Status) { "查询失败" } else { "请求失败" }
+    $retryNote = if ($r.RetriesExhausted) { "（已重试 3 次）" } else { "" }
+
     if ($r.NetError) {
-        Write-Host "[po0fw] #$idx $short… ❌ ${verb}: $($r.NetError)"
+        Write-Po0fwLog "#$idx $short… ❌ ${verb}: $($r.NetError)"
         $fail = $true
         continue
     }
     if (-not $Status -and $r.StatusCode -eq 403) {
-        Write-Host "[po0fw] #$idx $short… ❌ 槽位冲突：本机 IP 已在其它槽位，请先去控制台删除旧槽位"
+        Write-Po0fwLog "#$idx $short… ❌ 槽位冲突：本机 IP 已在其它槽位，请先去控制台删除旧槽位"
         $fail = $true
         continue
     }
@@ -203,17 +213,18 @@ foreach ($rawEntry in $rawEntries) {
             $r.Data.message
         } elseif ($r.Data -and $r.Data.error) {
             $r.Data.error
-        } elseif ($r.Body) {
+        } elseif ($r.Body -and $r.Body.Trim()) {
             $r.Body.Trim()
         } else {
-            "请求被拒绝"
+            "无响应体"
         }
-        Write-Host "[po0fw] #$idx $short… ❌ ${verb} (HTTP $($r.StatusCode)): $errDetail"
+        Write-Po0fwLog "#$idx $short… ❌ ${verb} (HTTP $($r.StatusCode)): ${errDetail}${retryNote}"
         $fail = $true
         continue
     }
     if ($null -eq $r.Data -or $null -eq $r.Data.PSObject.Properties["whitelist"]) {
-        Write-Host "[po0fw] #$idx $short… ❌ ${verb}: 响应异常 $($r.Body)"
+        $rawBody = if ($r.Body -and $r.Body.Trim()) { $r.Body.Trim() } else { "无响应体" }
+        Write-Po0fwLog "#$idx $short… ❌ ${verb}: 响应异常 ${rawBody}${retryNote}"
         $fail = $true
         continue
     }
@@ -223,10 +234,14 @@ foreach ($rawEntry in $rawEntries) {
     $whitelist = @()
     if ($null -ne $res.whitelist) { $whitelist = @($res.whitelist) }
     $inList = $false
+    $matchedSlot = $null
     foreach ($item in $whitelist) {
         $itemIp = if ($item -is [string]) { $item } else { [string]$item.ip }
         if (Test-SameC24 -A $itemIp -B $cur) {
             $inList = $true
+            if (-not ($item -is [string]) -and $null -ne $item.slot) {
+                $matchedSlot = [string]$item.slot
+            }
             break
         }
     }
@@ -234,9 +249,9 @@ foreach ($rawEntry in $rawEntries) {
     if ($Status) {
         $limit = if ($res.limit) { $res.limit } else { 5 }
         $currentDisplay = if ($cur) { $cur } else { '未知' }
-        Write-Host "[po0fw] #$idx $short… 当前出口 $currentDisplay"
+        Write-Po0fwLog "#$idx $short… 当前出口 $currentDisplay"
         if ($res.enabled -eq $false) {
-            Write-Host "[po0fw] #$idx $short… ⚠️  防火墙未启用"
+            Write-Po0fwLog "#$idx $short… ⚠️  防火墙未启用"
             $fail = $true
             continue
         }
@@ -250,31 +265,38 @@ foreach ($rawEntry in $rawEntries) {
             } else {
                 "(固定槽位 $eSlot，不淘汰)"
             }
-            Write-Host "[po0fw]     $mark $eIp  $kind"
+            Write-Po0fwLog "    $mark $eIp  $kind"
             $n++
         }
-        if ($n -eq 0) { Write-Host "[po0fw]     (白名单为空)" }
-        Write-Host "[po0fw]     共 $n/$limit 个网段占用"
+        if ($n -eq 0) { Write-Po0fwLog "    (白名单为空)" }
+        Write-Po0fwLog "    共 $n/$limit 个网段占用"
         if ($inList) {
-            Write-Host "[po0fw] #$idx $short… ✅ 当前出口已在白名单"
+            Write-Po0fwLog "#$idx $short… ✅ 当前出口已在白名单"
         } else {
-            Write-Host "[po0fw] #$idx $short… ⚠️  当前出口不在白名单（status 不会自动加白，需要时请跑不带 -Status 的命令）"
+            Write-Po0fwLog "#$idx $short… ⚠️  当前出口不在白名单（status 不会自动加白，需要时请跑不带 -Status 的命令）"
             $fail = $true
         }
         continue
     }
 
     if ($res.enabled -eq $false) {
-        Write-Host "[po0fw] #$idx $short… ⚠️  防火墙未启用"
+        Write-Po0fwLog "#$idx $short… ⚠️  防火墙未启用"
         $fail = $true
         continue
     }
 
     if ($inList) {
-        $slotDisplay = if ($null -ne $slot -and $slot -ne "") { " (槽位 $slot)" } else { "" }
-        Write-Host "[po0fw] #$idx $short… ✅ 出口 $cur 已在白名单$slotDisplay"
+        if ($null -ne $slot -and $slot -ne "" -and $matchedSlot -ne $slot) {
+            $actual = if ($null -ne $matchedSlot) { $matchedSlot } else { "null" }
+            Write-Po0fwLog "#$idx $short… ⚠️  出口 $cur 已在白名单，但固定槽位 @$slot 未生效 (实际=$actual)"
+            $fail = $true
+        } elseif ($null -ne $matchedSlot -and $matchedSlot -ne "") {
+            Write-Po0fwLog "#$idx $short… ✅ 出口 $cur 已在白名单 (槽位 $matchedSlot)"
+        } else {
+            Write-Po0fwLog "#$idx $short… ✅ 出口 $cur 已在白名单"
+        }
     } else {
-        Write-Host "[po0fw] #$idx $short… ❌ 加白未生效 (currentIp=$cur)"
+        Write-Po0fwLog "#$idx $short… ❌ 加白未生效 (currentIp=$cur)"
         $fail = $true
     }
 }

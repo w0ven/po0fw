@@ -80,12 +80,25 @@ CONF_DIR=$(dirname "$CONF")
 mkdir -p "$BIN_DIR" "$CONF_DIR"
 
 printf '[1/3] 安装主脚本 -> %s\n' "$BIN"
-SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd || pwd)
 TMP_BIN="${BIN}.tmp.$$"
 trap 'rm -f "$TMP_BIN"' EXIT HUP INT TERM
 
-if [ -f "$SCRIPT_DIR/po0fw.sh" ]; then
-  cp "$SCRIPT_DIR/po0fw.sh" "$TMP_BIN"
+# 仅在直接执行本地仓库内的 install-linux.sh 文件时复用同目录 po0fw.sh；
+# 通过 `curl ... | sh` 管道安装时 $0 为 sh，必须从远端拉取最新脚本，避免误拷工作目录同名旧文件。
+LOCAL_MAIN=""
+if [ -f "$0" ]; then
+  case "$(basename "$0")" in
+    install-linux.sh)
+      SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd || true)
+      if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/po0fw.sh" ]; then
+        LOCAL_MAIN="$SCRIPT_DIR/po0fw.sh"
+      fi
+      ;;
+  esac
+fi
+
+if [ -n "$LOCAL_MAIN" ]; then
+  cp "$LOCAL_MAIN" "$TMP_BIN"
 else
   curl -fsSL -m 30 "$RAW_BASE/po0fw.sh" -o "$TMP_BIN"
 fi

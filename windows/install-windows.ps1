@@ -1,14 +1,31 @@
 ﻿#requires -Version 5.1
-# po0fw Windows one-click installer (run from an elevated PowerShell)
-# Usage: powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Tokens "pgnfw_xxx"
+# po0fw Windows one-click installer / uninstaller (run from an elevated PowerShell)
+# Install:   powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Tokens "pgnfw_xxx"
+# Uninstall: powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Uninstall
 param(
-    [Parameter(Mandatory = $true)][string]$Tokens,
+    [string]$Tokens = $env:PO0FW_TOKENS,
     [string]$RawBase = "https://raw.githubusercontent.com/w0ven/po0fw/main",
-    [switch]$SkipInitialRun
+    [switch]$SkipInitialRun,
+    [switch]$Uninstall
 )
 
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor 3072
+
+$dir = Join-Path $env:ProgramData "po0fw"
+
+if ($Uninstall) {
+    Unregister-ScheduledTask -TaskName "po0fw" -Confirm:$false -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $dir) {
+        Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host "[po0fw] Scheduled task and files under $dir have been removed."
+    exit 0
+}
+
+if (-not $Tokens) {
+    throw "Missing -Tokens parameter. Usage: powershell -ExecutionPolicy Bypass -File install-windows.ps1 -Tokens `"pgnfw_xxx`""
+}
 
 function Normalize-Po0fwTokens {
     param([Parameter(Mandatory = $true)][string]$RawTokens)
@@ -31,7 +48,6 @@ function Normalize-Po0fwTokens {
 
 $cleanTokens = Normalize-Po0fwTokens -RawTokens $Tokens
 
-$dir = Join-Path $env:ProgramData "po0fw"
 $mainScript = Join-Path $dir "po0fw.ps1"
 $launcherScript = Join-Path $dir "po0fw-hidden.vbs"
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -107,9 +123,7 @@ Write-Host "[2/3] Writing configuration"
 Set-Content -LiteralPath (Join-Path $dir "po0fw.conf") -Value $cleanTokens -Encoding UTF8
 
 Write-Host "[3/3] Registering the silent scheduled task (10 minutes + network change)"
-# Use splatting instead of PowerShell backtick continuations. A backtick stops
-# working when copied text gains trailing whitespace, which made -Argument run
-# as a separate command and left the scheduled-task Action null.
+# Use splatting instead of PowerShell backtick continuations.
 $actionParameters = @{
     Execute = "wscript.exe"
     Argument = ('"{0}" //B //Nologo' -f $launcherScript)

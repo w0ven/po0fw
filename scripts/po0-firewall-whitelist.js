@@ -174,6 +174,7 @@ function httpRequest(method, opts, attempt) {
     if (!r.error && !isRetryableServerError(r)) return r;
     if (attempt >= HTTP_RETRY) {
       if (r.error) r.error = r.error + "（已重试 " + HTTP_RETRY + " 次）";
+      else r.retried = HTTP_RETRY;
       return r;
     }
     return delay(HTTP_RETRY_DELAY_MS * attempt).then(function () {
@@ -335,7 +336,8 @@ function apiCall(token, slot) {
         (data && (data.message || data.error)) ||
         String(r.body || "").replace(/^\s+|\s+$/g, "").slice(0, 80) ||
         "请求被拒绝";
-      return { error: "HTTP " + errStatus + ": " + msg };
+      var retrySuffix = r.retried ? "（已重试 " + r.retried + " 次）" : "";
+      return { error: "HTTP " + errStatus + ": " + msg + retrySuffix };
     }
     if (!data || (typeof data !== "object")) {
       return { error: "响应异常: " + String(r.body).slice(0, 80) };

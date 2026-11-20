@@ -71,9 +71,19 @@ TMP_BIN="/tmp/po0fw.bin.$$"
 trap 'rm -f "$TMP_BIN"' EXIT HUP INT TERM
 
 printf '[1/4] 下载主脚本 -> %s\n' "$BIN"
-SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd || pwd)
-if [ -f "$SCRIPT_DIR/../po0fw.sh" ]; then
-  cp "$SCRIPT_DIR/../po0fw.sh" "$TMP_BIN"
+LOCAL_MAIN=""
+if [ -f "$0" ]; then
+  case "$(basename "$0")" in
+    install-openwrt.sh)
+      SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" 2>/dev/null && pwd || true)
+      if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/../po0fw.sh" ]; then
+        LOCAL_MAIN="$SCRIPT_DIR/../po0fw.sh"
+      fi
+      ;;
+  esac
+fi
+if [ -n "$LOCAL_MAIN" ]; then
+  cp "$LOCAL_MAIN" "$TMP_BIN"
 else
   curl -fsSL -m 30 "$RAW_BASE/po0fw.sh" -o "$TMP_BIN"
 fi
